@@ -1,4 +1,4 @@
-package ai.starlake;
+package ai.starlake.jdbc;
 
 import java.sql.Array;
 import java.sql.Blob;
@@ -21,9 +21,11 @@ import java.util.Properties;
 import java.util.concurrent.Executor;
 
 public class StarlakeConnection implements Connection {
+    Connection wrapped;
+
     @Override
     public Statement createStatement() throws SQLException {
-        return null;
+        return wrapped.c;
     }
 
     @Override

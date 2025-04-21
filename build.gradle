@@ -1,3 +1,4 @@
+
 import se.bjurr.gitchangelog.plugin.gradle.GitChangelogTask
 
 
@@ -55,6 +56,10 @@ dependencies {
 
     // we do need better matchers
     testImplementation("org.assertj:assertj-core:+")
+
+    // some JDBC Drivers
+    testImplementation 'com.h2database:h2:+'
+    testImplementation 'org.duckdb:duckdb_jdbc:1.2.+'
 
     // Java Doc in XML Format
     xmlDoclet 'com.manticore-projects.tools:xml-doclet:+'
@@ -179,18 +184,6 @@ shadowJar {
 
 test {
     useJUnitPlatform()
-
-    // set heap size for the test JVM(s)
-    minHeapSize = "1G"
-    maxHeapSize = "4G"
-
-    // Set maxParallelForks to 1 to ensure only one test process runs at a time
-    maxParallelForks = 1
-
-    // Ensure JUnit 5 executes tests sequentially
-    systemProperty "junit.jupiter.execution.parallel.enabled", "false"
-
-
     jacoco {
         excludes = ['net/sf/jsqlparser/parser/CCJSqlParserTokenManager']
     }

@@ -1,0 +1,450 @@
+import se.bjurr.gitchangelog.plugin.gradle.GitChangelogTask
+
+
+
+plugins {
+    id 'java-library'
+    id 'com.gradleup.shadow' version 'latest.release'
+    id 'maven-publish'
+    id 'signing'
+
+    id 'pmd'
+    id 'checkstyle'
+    id 'jacoco'
+    id 'com.github.kt3k.coveralls' version "latest.release"
+    id "com.github.spotbugs" version "latest.release"
+    id "com.diffplug.spotless" version "latest.release"
+
+    id "de.undercouch.download" version "latest.release"
+    id 'org.hidetake.ssh' version "latest.release"
+    id "com.github.hierynomus.license" version "latest.release"
+    id "se.bjurr.gitchangelog.git-changelog-gradle-plugin" version "latest.release"
+    id 'biz.aQute.bnd.builder' version "latest.release"
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+
+    //Sonatype OSSRH
+    maven {
+        url = uri('https://s01.oss.sonatype.org/content/repositories/snapshots/')
+    }
+
+    maven {
+        url = uri('https://oss.sonatype.org/content/repositories/snapshots/')
+    }
+
+    maven {
+        url = uri('https://oss.sonatype.org/content/groups/public/')
+    }
+}
+
+configurations {
+    xmlDoclet
+}
+
+dependencies {
+    implementation('com.github.jsqlparser:jsqlparser:+'){ changing = true }
+    implementation('ai.starlake.jsqltranspiler:jsqltranspiler:+') { changing = true }
+
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.11.4'
+    testImplementation 'org.junit.jupiter:junit-jupiter-engine:5.11.4'
+    testImplementation 'org.junit.jupiter:junit-jupiter-params:5.11.4'
+
+    // we do need better matchers
+    testImplementation("org.assertj:assertj-core:+")
+
+    // Java Doc in XML Format
+    xmlDoclet 'com.manticore-projects.tools:xml-doclet:+'
+}
+
+configurations.configureEach {
+    resolutionStrategy.eachDependency { DependencyResolveDetails details ->
+        if (details.requested.group == 'com.github.jsqlparser') {
+            // Check for updates every build
+            resolutionStrategy.cacheChangingModulesFor 30, 'seconds'
+        }
+    }
+}
+
+def getVersion = { boolean considerSnapshot ->
+    Integer major = 0
+    Integer minor = 0
+    Integer patch = null
+    Integer build = null
+    String commit = null
+    String snapshot = ""
+
+    def versionStr = providers.exec {
+        commandLine "git", "--no-pager", "-C", project.projectDir,  "describe", "--tags", "--always", "--dirty=-SNAPSHOT"
+    }.standardOutput.asText.get().trim()
+
+    def pattern = /(?<major>\d*)\.(?<minor>\d*)(\.(?<patch>\d*))?(-(?<build>\d*)-(?<commit>[a-zA-Z\d]*))?/
+    def matcher = versionStr =~ pattern
+
+    if (matcher.find()) {
+        major = matcher.group('major') as Integer ?: 0
+        minor = matcher.group('minor') as Integer ?: 0
+        patch = matcher.group('patch') as Integer ?: null
+        build = matcher.group('build') as Integer ?: null
+        commit = matcher.group('commit') ?: null
+    }
+
+    if (considerSnapshot && (versionStr.endsWith('SNAPSHOT') || build != null)) {
+        minor++
+        if (patch != null) patch = 0
+        snapshot = "-SNAPSHOT"
+    }
+
+    return patch != null
+            ? "${major}.${minor}.${patch}${snapshot}"
+            : "${major}.${minor}${snapshot}"
+}
+
+
+// for publishing a release, call Gradle with Environment Variable RELEASE:
+// RELEASE=true gradle JSQLTranspiler:publish
+version = getVersion( !System.getenv("RELEASE") )
+group = 'ai.starlake.jdbc'
+description = 'Starlake JDBC Proxy Driver'
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+
+    sourceCompatibility = '11'
+    targetCompatibility = '11'
+
+    // needed for XML-Doclet to work (since Doclet changed again with Java 13)
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(17))
+    }
+}
+
+javadoc {
+    if(JavaVersion.current().isJava9Compatible()) {
+        options.addBooleanOption('html5', true)
+    }
+    options.addBooleanOption("Xdoclint:none", true)
+}
+
+tasks.register('xmldoc', Javadoc) {
+    source = sourceSets.main.allJava
+    include("build/generated/javacc/net/sf/jsqlparser/parser/*.java" )
+    include("../JSQLParser/src/main/java/**/*.java")
+
+    destinationDir = reporting.file("xmlDoclet")
+    options.docletpath = configurations.xmlDoclet.files as List
+    options.doclet = "com.manticore.tools.xmldoclet.XmlDoclet"
+    title = "API $version"
+    options.addBooleanOption("rst", true)
+    options.addBooleanOption("withFloatingToc", true)
+    options.addStringOption("basePackage", "ai.starlake.jdbc")
+
+    dependsOn(compileJava)
+    doLast {
+        copy {
+            from reporting.file("xmlDoclet/javadoc.rst")
+            into "${projectDir}/src/site/sphinx/"
+        }
+    }
+}
+
+jar {
+    manifest {
+        attributes(
+            "Created-By": System.properties['user.name'],
+            "Automatic-Module-Name": "ai.starlake.jdbc"
+        )
+    }
+
+    bundle {
+        properties.empty()
+        bnd(
+            "Created-By": System.properties.get('user.name'),
+            "Bundle-SymbolicName": "ai.starlake.jdbc",
+            "Import-Package": "*",
+            "Export-Package": "ai.starlake.jdbc.*",
+            "Automatic-Module-Name": "ai.starlake.jdbc"
+        )
+    }
+}
+
+shadowJar {
+    minimize()
+}
+
+
+test {
+    useJUnitPlatform()
+
+    // set heap size for the test JVM(s)
+    minHeapSize = "1G"
+    maxHeapSize = "4G"
+
+    // Set maxParallelForks to 1 to ensure only one test process runs at a time
+    maxParallelForks = 1
+
+    // Ensure JUnit 5 executes tests sequentially
+    systemProperty "junit.jupiter.execution.parallel.enabled", "false"
+
+
+    jacoco {
+        excludes = ['net/sf/jsqlparser/parser/CCJSqlParserTokenManager']
+    }
+}
+
+license {
+    excludes(["**/*.txt", "**/*.conf", "**/*.sql",])
+    includes(["**/*.properties", "**/*.java", "**/*.xml"])
+
+    ext.year = Calendar.getInstance().get(Calendar.YEAR)
+    ext.name = 'Starlake.AI'
+    ext.email = 'hayssam.saleh@starlake.ai'
+
+    strictCheck = false
+    ignoreFailures = true
+}
+
+coveralls {
+    jacocoReportPath  layout.buildDirectory.file('reports/jacoco/test/jacocoTestReport.xml')
+}
+
+jacocoTestReport {
+    dependsOn test // tests are required to run before generating the report
+    reports {
+        xml.required = true
+        csv.required = false
+        html.outputLocation = layout.buildDirectory.dir('reports/jacoco')
+    }
+}
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            //element = 'CLASS'
+            limit {
+                minimum = 0.10
+            }
+            excludes = [
+            ]
+        }
+        rule {
+            //element = 'CLASS'
+            limit {
+                counter = 'LINE'
+                value = 'MISSEDCOUNT'
+
+                maximum = 2048
+            }
+            excludes = [
+            ]
+        }
+    }
+}
+
+spotbugsMain {
+    reports {
+        html {
+            enabled = true
+            destination = file("build/reports/spotbugs/main/spotbugs.html")
+            stylesheet = 'fancy-hist.xsl'
+        }
+    }
+}
+
+spotbugs {
+    // fail only on P1 and without the net.sf.jsqlparser.parser.*
+    excludeFilter = file("config/spotbugs/spotBugsExcludeFilter.xml")
+
+    // do not run over the test, although we should do that eventually
+    spotbugsTest.enabled = false
+}
+
+pmd {
+    toolVersion = "7.6.0"
+
+    consoleOutput = true
+    sourceSets = [ sourceSets.main, sourceSets.test]
+
+    // clear the ruleset in order to use configured rules only
+    ruleSets = []
+
+    //rulesMinimumPriority = 1
+    ruleSetFiles = files("config/pmd/ruleset.xml")
+
+    pmdMain {
+        excludes = [
+                "build/generated/*"
+        ]
+    }
+}
+
+checkstyle {
+    sourceSets = [sourceSets.main, sourceSets.test]
+    configFile = rootProject.file('config/checkstyle/checkstyle.xml')
+
+}
+
+tasks.withType(Checkstyle).configureEach {
+    exclude '**/module-info.java', '**/package-info.java'
+}
+
+spotless {
+    // optional: limit format enforcement to just the files changed by this feature branch
+    ratchetFrom 'origin/main'
+
+    format 'misc', {
+        // define the files to apply `misc` to
+        target '*.rst', '*.md', '.gitignore'
+
+        // define the steps to apply to those files
+        trimTrailingWhitespace()
+        leadingTabsToSpaces(4) // or spaces. Takes an integer argument if you don't like 4
+        endWithNewline()
+    }
+    java {
+        leadingTabsToSpaces(4)
+        eclipse().configFile('config/formatter/eclipse-java-google-style.xml')
+    }
+}
+
+tasks.withType(Checkstyle).configureEach {
+    reports {
+        xml.required = false
+        html.required = true
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            artifactId 'starlakejdbc'
+            from(components.java)
+            versionMapping {
+                usage('java-api') {
+                    fromResolutionOf('runtimeClasspath')
+                }
+                usage('java-runtime') {
+                    fromResolutionResult()
+                }
+            }
+
+            pom {
+                name = 'Starlake JDBC Proxy library'
+                description = 'The JDBC Proxy for staging and snapshotting of DML and DDL'
+                url = 'https://github.com/starlake-ai/jsqltranspiler'
+                licenses {
+                    license {
+                        name = 'Apache License'
+                        url = 'https://www.apache.org/licenses/LICENSE-2.0'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'are'
+                        name = 'Andreas Reichel'
+                        email = 'andreas@manticore-projects.com'
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            // Username and Password are defined in ~/.gradle/gradle.properties
+            name "ossrh"
+            url version.toString().endsWith('-SNAPSHOT')
+                    ? "https://s01.oss.sonatype.org/content/repositories/snapshots/"
+                    : "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
+            credentials(PasswordCredentials)
+        }
+    }
+}
+
+signing {
+    required { !version.endsWith("SNAPSHOT") && gradle.taskGraph.hasTask("publish") }
+    sign publishing.publications.mavenJava
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 11
+}
+
+tasks.withType(Test).configureEach {
+    maxParallelForks = 10
+}
+
+tasks.register('gitChangelogTask', GitChangelogTask) {
+    fromRepo.set( file("$projectDir").toString() )
+    file.set( new File("${projectDir}/src/site/sphinx/changelog.rst") )
+    templateContent.set ("""
+************************
+Changelog
+************************
+
+
+{{#tags}}
+{{#ifMatches name "^Unreleased.*"}}
+Latest Changes since |JSQLTRANSPILER_VERSION|
+{{/ifMatches}}
+{{#ifMatches name "^(?!Unreleased).*"}}
+Version {{name}}
+{{/ifMatches}}
+=============================================================
+
+ {{#issues}}
+
+  {{#commits}}
+   {{#ifMatches messageTitle "^(?!Merge).*"}}
+  * **{{{messageTitle}}}**
+    
+    {{authorName}}, {{commitDate}}
+   {{/ifMatches}}
+  {{/commits}}
+
+ {{/issues}}
+{{/tags}}
+""")
+}
+
+remotes {
+    webServer {
+        host = findProperty("${project.name}.host")
+        user = findProperty("${project.name}.username")
+        identity = new File("${System.properties['user.home']}/.ssh/id_rsa")
+    }
+}
+
+ssh.settings {
+    timeoutSec = 60000
+}
+
+tasks.register('upload') {
+    dependsOn(jar, gitChangelogTask, xmldoc)
+    doFirst {
+        if (findProperty("${project.name}.host") == null) {
+            println(
+                    """
+                Property \"${project.name}.host\' not found.
+                Please define \"${project.name}.host\" in the Gradle configuration (e. g. \$HOME/.gradle/gradle.properties.
+                """
+            )
+        }
+    }
+    doLast {
+        ssh.run {
+            session(remotes.webServer) {
+                def versionStable = getVersion(false)
+                execute "mkdir -p download/${project.name}-${versionStable}"
+                for (File file: fileTree(include:['*.jar'], dir:"${project.buildDir}/libs").collect()) {
+                    put from: file, into: "download/${project.name}-${versionStable}"
+                }
+            }
+        }
+    }
+}
+
+

@@ -1,0 +1,36 @@
+name: Gradle Publish Snapshot
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    - id: install-gradle-properties
+      name: Install Gradle Properties from Secret
+      env:
+        GRADLE_PROPERTIES: ${{ secrets.GRADLE_PROPERTIES }}
+        shell: bash
+      run: |
+        mkdir -p ~/.gradle/
+        echo "GRADLE_USER_HOME=${HOME}/.gradle" >> $GITHUB_ENV
+        echo "${GRADLE_PROPERTIES}" > ~/.gradle/gradle.properties
+    - name: Publish to Sonatype
+      run: LANG=en_US.UTF-8 ./gradlew check publish
+#      env:
+#        USERNAME: ${{ github.actor }}
+#        TOKEN: ${{ secrets.SONATYPE_TOKEN }}

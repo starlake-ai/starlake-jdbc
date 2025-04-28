@@ -33,7 +33,7 @@ public class StarlakeStatement implements Statement {
 
   @Override
   public ResultSet executeQuery(String sql) throws SQLException {
-    return new StarlakeResultSet(wrapped.executeQuery(sql));
+    return new StarlakeResultSet(this, wrapped.executeQuery(sql));
   }
 
   @Override
@@ -108,7 +108,7 @@ public class StarlakeStatement implements Statement {
 
   @Override
   public ResultSet getResultSet() throws SQLException {
-    return new StarlakeResultSet(wrapped.getResultSet());
+    return new StarlakeResultSet(this, wrapped.getResultSet());
   }
 
   @Override
@@ -178,7 +178,7 @@ public class StarlakeStatement implements Statement {
 
   @Override
   public ResultSet getGeneratedKeys() throws SQLException {
-    return new StarlakeResultSet(wrapped.getGeneratedKeys());
+    return new StarlakeResultSet(this, wrapped.getGeneratedKeys());
   }
 
   @Override

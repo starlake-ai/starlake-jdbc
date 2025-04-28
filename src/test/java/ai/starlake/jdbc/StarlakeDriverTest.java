@@ -17,12 +17,17 @@
 package ai.starlake.jdbc;
 
 
+import org.duckdb.DuckDBDriver;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.Properties;
 
 class StarlakeDriverTest {
 
@@ -30,9 +35,63 @@ class StarlakeDriverTest {
   void testH2() throws ClassNotFoundException, SQLException {
     Class.forName("ai.starlake.jdbc.StarlakeDriver");
 
-    Driver driver = DriverManager.getDriver(
-        "jdbc:starlake:h2:tcp://localhost//home/are/.manticore/riskbox;IFEXISTS=FALSE;COMPRESS=TRUE;PAGE_SIZE=128;DB_CLOSE_DELAY=30;AUTO_RECONNECT=TRUE;CACHE_SIZE=8192;MODE=Oracle;LOCK_TIMEOUT=10000;RETENTION_TIME=0");
-
+    // Wrap an H2 in memory DB
+    Driver driver = DriverManager.getDriver("jdbc:starlake:h2:test");
     Assertions.assertInstanceOf(StarlakeDriver.class, driver);
+    Assertions.assertInstanceOf(org.h2.Driver.class, ((StarlakeDriver) driver).getWrappedDriver());
+
+    Properties info = new Properties();
+    info.put("username", "SA");
+    info.put("password", "");
+
+    try (Connection conn = driver.connect("jdbc:starlake:h2:mem:", info);
+        Statement st = conn.createStatement();
+        ResultSet rs = st.executeQuery("SELECT 1");) {
+      if (rs.next()) {
+        // executed against H2 correctly
+        Assertions.assertEquals(1, rs.getInt(1));
+      }
+
+      // instance of the Starlake ResultSet implementation
+      Assertions.assertInstanceOf(StarlakeResultSet.class, rs);
+
+      // instance of the Starlake Statement implementation
+      Assertions.assertInstanceOf(StarlakeStatement.class, rs.getStatement());
+
+      // instance of the Starlake Connection implementation
+      Assertions.assertInstanceOf(StarlakeConnection.class, st.getConnection());
+    }
+  }
+
+  @Test
+  void testDuckDB() throws ClassNotFoundException, SQLException {
+    Class.forName("ai.starlake.jdbc.StarlakeDriver");
+
+    // Wrap a DuckDB in memory DB
+    Driver driver = DriverManager.getDriver("jdbc:starlake:duckdb:");
+    Assertions.assertInstanceOf(StarlakeDriver.class, driver);
+    Assertions.assertInstanceOf(DuckDBDriver.class, ((StarlakeDriver) driver).getWrappedDriver());
+
+    Properties info = new Properties();
+    info.put("username", "SA");
+    info.put("password", "");
+
+    try (Connection conn = driver.connect("jdbc:starlake:duckdb:", info);
+        Statement st = conn.createStatement();
+        ResultSet rs = st.executeQuery("SELECT 1");) {
+      if (rs.next()) {
+        // executed against H2 correctly
+        Assertions.assertEquals(1, rs.getInt(1));
+      }
+
+      // instance of the Starlake ResultSet implementation
+      Assertions.assertInstanceOf(StarlakeResultSet.class, rs);
+
+      // instance of the Starlake Statement implementation
+      Assertions.assertInstanceOf(StarlakeStatement.class, rs.getStatement());
+
+      // instance of the Starlake Connection implementation
+      Assertions.assertInstanceOf(StarlakeConnection.class, st.getConnection());
+    }
   }
 }

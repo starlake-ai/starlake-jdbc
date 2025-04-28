@@ -136,7 +136,7 @@ public class StarlakeDriver implements Driver {
         wrapped = drivers.nextElement();
         try {
           if (wrapped.acceptsURL(unwrappedUrlStr)) {
-            return wrapped.connect(unwrappedUrlStr, info);
+            return new StarlakeConnection(wrapped.connect(unwrappedUrlStr, info));
           }
         } catch (SQLException ignored) {
           // Continue trying other drivers
@@ -167,8 +167,14 @@ public class StarlakeDriver implements Driver {
         // Dynamically load and instantiate the driver class
         Class<?> clazz = Class.forName(className);
         Driver driver = (Driver) clazz.getDeclaredConstructor().newInstance();
+        boolean acceptsUrl = driver.acceptsURL(unwrappedUrlStr);
 
-        return driver.acceptsURL(unwrappedUrlStr);
+        if (acceptsUrl) {
+          wrapped = driver;
+          return true;
+        } else {
+          return false;
+        }
       } catch (Exception e) {
         throw new SQLException("Failed to load driver class: " + className, e);
       }
@@ -178,7 +184,12 @@ public class StarlakeDriver implements Driver {
       boolean acceptsUrl = false;
       while (drivers.hasMoreElements()) {
         Driver driver = drivers.nextElement();
-        acceptsUrl |= driver.acceptsURL(unwrappedUrlStr);
+        acceptsUrl = driver.acceptsURL(unwrappedUrlStr);
+
+        if (acceptsUrl) {
+          wrapped = driver;
+          return true;
+        }
       }
       return acceptsUrl;
     }
@@ -207,5 +218,9 @@ public class StarlakeDriver implements Driver {
   @Override
   public Logger getParentLogger() throws SQLFeatureNotSupportedException {
     return wrapped.getParentLogger();
+  }
+
+  public Driver getWrappedDriver() {
+    return wrapped;
   }
 }

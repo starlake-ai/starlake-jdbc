@@ -40,9 +40,11 @@ import java.util.Calendar;
 import java.util.Map;
 
 public class StarlakeResultSet implements ResultSet {
+  private final StarlakeStatement statement;
   private final ResultSet wrapped;
 
-  public StarlakeResultSet(ResultSet wrapped) {
+  public StarlakeResultSet(StarlakeStatement statement, ResultSet wrapped) {
+    this.statement = statement;
     this.wrapped = wrapped;
   }
 
@@ -614,7 +616,7 @@ public class StarlakeResultSet implements ResultSet {
 
   @Override
   public Statement getStatement() throws SQLException {
-    return wrapped.getStatement();
+    return statement;
   }
 
   @Override

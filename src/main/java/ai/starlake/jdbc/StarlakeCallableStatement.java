@@ -41,11 +41,12 @@ import java.sql.Timestamp;
 import java.util.Calendar;
 import java.util.Map;
 
-public class StarlakeCallableStatement implements CallableStatement {
+public class StarlakeCallableStatement extends StarlakeStatement implements CallableStatement {
   private final StarlakeConnection connection;
   private final CallableStatement wrapped;
 
   public StarlakeCallableStatement(StarlakeConnection connection, CallableStatement wrapped) {
+    super(connection, wrapped);
     this.connection = connection;
     this.wrapped = wrapped;
   }

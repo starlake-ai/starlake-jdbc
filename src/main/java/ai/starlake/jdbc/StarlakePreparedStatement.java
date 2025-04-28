@@ -40,18 +40,20 @@ import java.sql.Time;
 import java.sql.Timestamp;
 import java.util.Calendar;
 
-public class StarlakePreparedStatement implements PreparedStatement {
+public class StarlakePreparedStatement extends StarlakeStatement implements PreparedStatement {
   private final StarlakeConnection connection;
   private final PreparedStatement wrapped;
 
   public StarlakePreparedStatement(StarlakeConnection connection, PreparedStatement wrapped) {
+    super(connection, wrapped);
+
     this.connection = connection;
     this.wrapped = wrapped;
   }
 
   @Override
   public ResultSet executeQuery() throws SQLException {
-    return new StarlakeResultSet(wrapped.executeQuery());
+    return new StarlakeResultSet(this, wrapped.executeQuery());
   }
 
   @Override
@@ -348,7 +350,7 @@ public class StarlakePreparedStatement implements PreparedStatement {
 
   @Override
   public ResultSet executeQuery(String sql) throws SQLException {
-    return new StarlakeResultSet(wrapped.executeQuery(sql));
+    return new StarlakeResultSet(this, wrapped.executeQuery(sql));
   }
 
   @Override
@@ -423,7 +425,7 @@ public class StarlakePreparedStatement implements PreparedStatement {
 
   @Override
   public ResultSet getResultSet() throws SQLException {
-    return new StarlakeResultSet(wrapped.getResultSet());
+    return new StarlakeResultSet(this, wrapped.getResultSet());
   }
 
   @Override
@@ -493,7 +495,7 @@ public class StarlakePreparedStatement implements PreparedStatement {
 
   @Override
   public ResultSet getGeneratedKeys() throws SQLException {
-    return new StarlakeResultSet(wrapped.getGeneratedKeys());
+    return new StarlakeResultSet(this, wrapped.getGeneratedKeys());
   }
 
   @Override

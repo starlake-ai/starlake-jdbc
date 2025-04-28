@@ -1,7 +1,6 @@
-
+import com.github.spotbugs.snom.SpotBugsReport
+import org.hidetake.groovy.ssh.core.Remote
 import se.bjurr.gitchangelog.plugin.gradle.GitChangelogTask
-
-
 
 plugins {
     id 'java-library'
@@ -166,7 +165,6 @@ jar {
     }
 
     bundle {
-        properties.empty()
         bnd(
             "Created-By": System.properties.get('user.name'),
             "Bundle-SymbolicName": "ai.starlake.jdbc",
@@ -325,9 +323,9 @@ publishing {
             }
 
             pom {
-                name = 'Starlake JDBC Proxy library'
+                name = 'Starlake JDBC Proxy driver'
                 description = 'The JDBC Proxy for staging and snapshotting of DML and DDL'
-                url = 'https://github.com/starlake-ai/jsqltranspiler'
+                url = 'https://github.com/starlake-ai/starlake-jdbc'
                 licenses {
                     license {
                         name = 'Apache License'
@@ -381,7 +379,7 @@ Changelog
 
 {{#tags}}
 {{#ifMatches name "^Unreleased.*"}}
-Latest Changes since |JSQLTRANSPILER_VERSION|
+Latest Changes since |STARLAKEJDBC_VERSION|
 {{/ifMatches}}
 {{#ifMatches name "^(?!Unreleased).*"}}
 Version {{name}}

@@ -17,7 +17,13 @@
 package ai.starlake.jdbc;
 
 
+import org.duckdb.DuckDBConnection;
 import org.duckdb.DuckDBDriver;
+import org.duckdb.DuckDBPreparedStatement;
+import org.duckdb.DuckDBResultSet;
+import org.h2.jdbc.JdbcConnection;
+import org.h2.jdbc.JdbcResultSet;
+import org.h2.jdbc.JdbcStatement;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -53,13 +59,22 @@ class StarlakeDriverTest {
       }
 
       // instance of the Starlake ResultSet implementation
+      // wrapping the H2 ResultSet implementation
       Assertions.assertInstanceOf(StarlakeResultSet.class, rs);
+      Assertions.assertTrue(rs.isWrapperFor(JdbcResultSet.class));
+      Assertions.assertInstanceOf(JdbcResultSet.class, rs.unwrap(JdbcResultSet.class));
 
       // instance of the Starlake Statement implementation
+      // wrapping the H2 Statement implementation
       Assertions.assertInstanceOf(StarlakeStatement.class, rs.getStatement());
+      Assertions.assertTrue(st.isWrapperFor(JdbcStatement.class));
+      Assertions.assertInstanceOf(JdbcStatement.class, st.unwrap(JdbcStatement.class));
 
       // instance of the Starlake Connection implementation
+      // wrapping the H2 Connection implementation
       Assertions.assertInstanceOf(StarlakeConnection.class, st.getConnection());
+      Assertions.assertTrue(conn.isWrapperFor(JdbcConnection.class));
+      Assertions.assertInstanceOf(JdbcConnection.class, conn.unwrap(JdbcConnection.class));
     }
   }
 
@@ -80,18 +95,29 @@ class StarlakeDriverTest {
         Statement st = conn.createStatement();
         ResultSet rs = st.executeQuery("SELECT 1");) {
       if (rs.next()) {
-        // executed against H2 correctly
+        // executed against DuckDB correctly
         Assertions.assertEquals(1, rs.getInt(1));
       }
 
       // instance of the Starlake ResultSet implementation
+      // wrapping the DuckDB ResultSet implementation
       Assertions.assertInstanceOf(StarlakeResultSet.class, rs);
+      Assertions.assertTrue(rs.isWrapperFor(DuckDBResultSet.class));
+      Assertions.assertInstanceOf(DuckDBResultSet.class, rs.unwrap(DuckDBResultSet.class));
 
       // instance of the Starlake Statement implementation
+      // wrapping the DuckDB Statement implementation
       Assertions.assertInstanceOf(StarlakeStatement.class, rs.getStatement());
+      // @todo: investigate Statement vs. PreparedStatement
+      Assertions.assertTrue(st.isWrapperFor(DuckDBPreparedStatement.class));
+      Assertions.assertInstanceOf(DuckDBPreparedStatement.class,
+          st.unwrap(DuckDBPreparedStatement.class));
 
       // instance of the Starlake Connection implementation
+      // wrapping the DuckDB Connection implementation
       Assertions.assertInstanceOf(StarlakeConnection.class, st.getConnection());
+      Assertions.assertTrue(conn.isWrapperFor(DuckDBConnection.class));
+      Assertions.assertInstanceOf(DuckDBConnection.class, conn.unwrap(DuckDBConnection.class));
     }
   }
 }

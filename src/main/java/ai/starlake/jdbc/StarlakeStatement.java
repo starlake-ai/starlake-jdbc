@@ -1,3 +1,19 @@
+/**
+ * Starlake.AI JDBC Driver is a JDBC Proxy Driver for supporting staging of DDL and DML statements.
+ * Copyright (C) 2025 Starlake.AI <hayssam.saleh@starlake.ai>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package ai.starlake.jdbc;
 
 import java.sql.Connection;
@@ -7,223 +23,291 @@ import java.sql.SQLWarning;
 import java.sql.Statement;
 
 public class StarlakeStatement implements Statement {
-    @Override
-    public ResultSet executeQuery(String s) throws SQLException {
-        return null;
-    }
+  private final StarlakeConnection connection;
+  private final Statement wrapped;
 
-    @Override
-    public int executeUpdate(String s) throws SQLException {
-        return 0;
-    }
+  public StarlakeStatement(StarlakeConnection connection, Statement wrapped) {
+    this.connection = connection;
+    this.wrapped = wrapped;
+  }
 
-    @Override
-    public void close() throws SQLException {
+  @Override
+  public ResultSet executeQuery(String sql) throws SQLException {
+    return new StarlakeResultSet(wrapped.executeQuery(sql));
+  }
 
-    }
+  @Override
+  public int executeUpdate(String sql) throws SQLException {
+    return wrapped.executeUpdate(sql);
+  }
 
-    @Override
-    public int getMaxFieldSize() throws SQLException {
-        return 0;
-    }
+  @Override
+  public void close() throws SQLException {
+    wrapped.close();
+  }
 
-    @Override
-    public void setMaxFieldSize(int i) throws SQLException {
+  @Override
+  public int getMaxFieldSize() throws SQLException {
+    return wrapped.getMaxFieldSize();
+  }
 
-    }
+  @Override
+  public void setMaxFieldSize(int max) throws SQLException {
+    wrapped.setMaxFieldSize(max);
+  }
 
-    @Override
-    public int getMaxRows() throws SQLException {
-        return 0;
-    }
+  @Override
+  public int getMaxRows() throws SQLException {
+    return wrapped.getMaxRows();
+  }
 
-    @Override
-    public void setMaxRows(int i) throws SQLException {
+  @Override
+  public void setMaxRows(int max) throws SQLException {
+    wrapped.setMaxRows(max);
+  }
 
-    }
+  @Override
+  public void setEscapeProcessing(boolean enable) throws SQLException {
+    wrapped.setEscapeProcessing(enable);
+  }
 
-    @Override
-    public void setEscapeProcessing(boolean b) throws SQLException {
+  @Override
+  public int getQueryTimeout() throws SQLException {
+    return wrapped.getQueryTimeout();
+  }
 
-    }
+  @Override
+  public void setQueryTimeout(int seconds) throws SQLException {
+    wrapped.setQueryTimeout(seconds);
+  }
 
-    @Override
-    public int getQueryTimeout() throws SQLException {
-        return 0;
-    }
+  @Override
+  public void cancel() throws SQLException {
+    wrapped.cancel();
+  }
 
-    @Override
-    public void setQueryTimeout(int i) throws SQLException {
+  @Override
+  public SQLWarning getWarnings() throws SQLException {
+    return wrapped.getWarnings();
+  }
 
-    }
+  @Override
+  public void clearWarnings() throws SQLException {
+    wrapped.clearWarnings();
+  }
 
-    @Override
-    public void cancel() throws SQLException {
+  @Override
+  public void setCursorName(String name) throws SQLException {
+    wrapped.setCursorName(name);
+  }
 
-    }
+  @Override
+  public boolean execute(String sql) throws SQLException {
+    return wrapped.execute(sql);
+  }
 
-    @Override
-    public SQLWarning getWarnings() throws SQLException {
-        return null;
-    }
+  @Override
+  public ResultSet getResultSet() throws SQLException {
+    return new StarlakeResultSet(wrapped.getResultSet());
+  }
 
-    @Override
-    public void clearWarnings() throws SQLException {
+  @Override
+  public int getUpdateCount() throws SQLException {
+    return wrapped.getUpdateCount();
+  }
 
-    }
+  @Override
+  public boolean getMoreResults() throws SQLException {
+    return wrapped.getMoreResults();
+  }
 
-    @Override
-    public void setCursorName(String s) throws SQLException {
+  @Override
+  public void setFetchDirection(int direction) throws SQLException {
+    wrapped.setFetchDirection(direction);
+  }
 
-    }
+  @Override
+  public int getFetchDirection() throws SQLException {
+    return wrapped.getFetchDirection();
+  }
 
-    @Override
-    public boolean execute(String s) throws SQLException {
-        return false;
-    }
+  @Override
+  public void setFetchSize(int rows) throws SQLException {
+    wrapped.setFetchSize(rows);
+  }
 
-    @Override
-    public ResultSet getResultSet() throws SQLException {
-        return null;
-    }
+  @Override
+  public int getFetchSize() throws SQLException {
+    return wrapped.getFetchSize();
+  }
 
-    @Override
-    public int getUpdateCount() throws SQLException {
-        return 0;
-    }
+  @Override
+  public int getResultSetConcurrency() throws SQLException {
+    return wrapped.getResultSetConcurrency();
+  }
 
-    @Override
-    public boolean getMoreResults() throws SQLException {
-        return false;
-    }
+  @Override
+  public int getResultSetType() throws SQLException {
+    return wrapped.getResultSetType();
+  }
 
-    @Override
-    public void setFetchDirection(int i) throws SQLException {
+  @Override
+  public void addBatch(String sql) throws SQLException {
+    wrapped.addBatch(sql);
+  }
 
-    }
+  @Override
+  public void clearBatch() throws SQLException {
+    wrapped.clearBatch();
+  }
 
-    @Override
-    public int getFetchDirection() throws SQLException {
-        return 0;
-    }
+  @Override
+  public int[] executeBatch() throws SQLException {
+    return wrapped.executeBatch();
+  }
 
-    @Override
-    public void setFetchSize(int i) throws SQLException {
+  @Override
+  public Connection getConnection() throws SQLException {
+    return connection;
+  }
 
-    }
+  @Override
+  public boolean getMoreResults(int current) throws SQLException {
+    return wrapped.getMoreResults(current);
+  }
 
-    @Override
-    public int getFetchSize() throws SQLException {
-        return 0;
-    }
+  @Override
+  public ResultSet getGeneratedKeys() throws SQLException {
+    return new StarlakeResultSet(wrapped.getGeneratedKeys());
+  }
 
-    @Override
-    public int getResultSetConcurrency() throws SQLException {
-        return 0;
-    }
+  @Override
+  public int executeUpdate(String sql, int autoGeneratedKeys) throws SQLException {
+    return wrapped.executeUpdate(sql, autoGeneratedKeys);
+  }
 
-    @Override
-    public int getResultSetType() throws SQLException {
-        return 0;
-    }
+  @Override
+  public int executeUpdate(String sql, int[] columnIndexes) throws SQLException {
+    return wrapped.executeUpdate(sql, columnIndexes);
+  }
 
-    @Override
-    public void addBatch(String s) throws SQLException {
+  @Override
+  public int executeUpdate(String sql, String[] columnNames) throws SQLException {
+    return wrapped.executeUpdate(sql, columnNames);
+  }
 
-    }
+  @Override
+  public boolean execute(String sql, int autoGeneratedKeys) throws SQLException {
+    return wrapped.execute(sql, autoGeneratedKeys);
+  }
 
-    @Override
-    public void clearBatch() throws SQLException {
+  @Override
+  public boolean execute(String sql, int[] columnIndexes) throws SQLException {
+    return wrapped.execute(sql, columnIndexes);
+  }
 
-    }
+  @Override
+  public boolean execute(String sql, String[] columnNames) throws SQLException {
+    return wrapped.execute(sql, columnNames);
+  }
 
-    @Override
-    public int[] executeBatch() throws SQLException {
-        return new int[0];
-    }
+  @Override
+  public int getResultSetHoldability() throws SQLException {
+    return wrapped.getResultSetHoldability();
+  }
 
-    @Override
-    public Connection getConnection() throws SQLException {
-        return null;
-    }
+  @Override
+  public boolean isClosed() throws SQLException {
+    return wrapped.isClosed();
+  }
 
-    @Override
-    public boolean getMoreResults(int i) throws SQLException {
-        return false;
-    }
+  @Override
+  public void setPoolable(boolean poolable) throws SQLException {
+    wrapped.setPoolable(poolable);
+  }
 
-    @Override
-    public ResultSet getGeneratedKeys() throws SQLException {
-        return null;
-    }
+  @Override
+  public boolean isPoolable() throws SQLException {
+    return wrapped.isPoolable();
+  }
 
-    @Override
-    public int executeUpdate(String s, int i) throws SQLException {
-        return 0;
-    }
+  @Override
+  public void closeOnCompletion() throws SQLException {
+    wrapped.closeOnCompletion();
+  }
 
-    @Override
-    public int executeUpdate(String s, int[] ints) throws SQLException {
-        return 0;
-    }
+  @Override
+  public boolean isCloseOnCompletion() throws SQLException {
+    return wrapped.isCloseOnCompletion();
+  }
 
-    @Override
-    public int executeUpdate(String s, String[] strings) throws SQLException {
-        return 0;
-    }
+  @Override
+  public long getLargeUpdateCount() throws SQLException {
+    return wrapped.getLargeUpdateCount();
+  }
 
-    @Override
-    public boolean execute(String s, int i) throws SQLException {
-        return false;
-    }
+  @Override
+  public void setLargeMaxRows(long max) throws SQLException {
+    wrapped.setLargeMaxRows(max);
+  }
 
-    @Override
-    public boolean execute(String s, int[] ints) throws SQLException {
-        return false;
-    }
+  @Override
+  public long getLargeMaxRows() throws SQLException {
+    return wrapped.getLargeMaxRows();
+  }
 
-    @Override
-    public boolean execute(String s, String[] strings) throws SQLException {
-        return false;
-    }
+  @Override
+  public long[] executeLargeBatch() throws SQLException {
+    return wrapped.executeLargeBatch();
+  }
 
-    @Override
-    public int getResultSetHoldability() throws SQLException {
-        return 0;
-    }
+  @Override
+  public long executeLargeUpdate(String sql) throws SQLException {
+    return wrapped.executeLargeUpdate(sql);
+  }
 
-    @Override
-    public boolean isClosed() throws SQLException {
-        return false;
-    }
+  @Override
+  public long executeLargeUpdate(String sql, int autoGeneratedKeys) throws SQLException {
+    return wrapped.executeLargeUpdate(sql, autoGeneratedKeys);
+  }
 
-    @Override
-    public void setPoolable(boolean b) throws SQLException {
+  @Override
+  public long executeLargeUpdate(String sql, int[] columnIndexes) throws SQLException {
+    return wrapped.executeLargeUpdate(sql, columnIndexes);
+  }
 
-    }
+  @Override
+  public long executeLargeUpdate(String sql, String[] columnNames) throws SQLException {
+    return wrapped.executeLargeUpdate(sql, columnNames);
+  }
 
-    @Override
-    public boolean isPoolable() throws SQLException {
-        return false;
-    }
+  @Override
+  public String enquoteLiteral(String val) throws SQLException {
+    return wrapped.enquoteLiteral(val);
+  }
 
-    @Override
-    public void closeOnCompletion() throws SQLException {
+  @Override
+  public String enquoteIdentifier(String identifier, boolean alwaysQuote) throws SQLException {
+    return wrapped.enquoteIdentifier(identifier, alwaysQuote);
+  }
 
-    }
+  @Override
+  public boolean isSimpleIdentifier(String identifier) throws SQLException {
+    return wrapped.isSimpleIdentifier(identifier);
+  }
 
-    @Override
-    public boolean isCloseOnCompletion() throws SQLException {
-        return false;
-    }
+  @Override
+  public String enquoteNCharLiteral(String val) throws SQLException {
+    return wrapped.enquoteNCharLiteral(val);
+  }
 
-    @Override
-    public <T> T unwrap(Class<T> aClass) throws SQLException {
-        return null;
-    }
+  @Override
+  public <T> T unwrap(Class<T> iface) throws SQLException {
+    return wrapped.unwrap(iface);
+  }
 
-    @Override
-    public boolean isWrapperFor(Class<?> aClass) throws SQLException {
-        return false;
-    }
+  @Override
+  public boolean isWrapperFor(Class<?> iface) throws SQLException {
+    return wrapped.isWrapperFor(iface);
+  }
 }

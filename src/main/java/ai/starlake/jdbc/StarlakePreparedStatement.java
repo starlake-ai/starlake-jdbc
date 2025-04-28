@@ -1,3 +1,19 @@
+/**
+ * Starlake.AI JDBC Driver is a JDBC Proxy Driver for supporting staging of DDL and DML statements.
+ * Copyright (C) 2025 Starlake.AI <hayssam.saleh@starlake.ai>
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package ai.starlake.jdbc;
 
 import java.io.InputStream;
@@ -17,6 +33,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.RowId;
 import java.sql.SQLException;
+import java.sql.SQLType;
 import java.sql.SQLWarning;
 import java.sql.SQLXML;
 import java.sql.Time;
@@ -24,498 +41,588 @@ import java.sql.Timestamp;
 import java.util.Calendar;
 
 public class StarlakePreparedStatement implements PreparedStatement {
-    @Override
-    public ResultSet executeQuery() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public int executeUpdate() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public void setNull(int i, int i1) throws SQLException {
-
-    }
-
-    @Override
-    public void setBoolean(int i, boolean b) throws SQLException {
-
-    }
-
-    @Override
-    public void setByte(int i, byte b) throws SQLException {
-
-    }
-
-    @Override
-    public void setShort(int i, short i1) throws SQLException {
-
-    }
-
-    @Override
-    public void setInt(int i, int i1) throws SQLException {
-
-    }
-
-    @Override
-    public void setLong(int i, long l) throws SQLException {
-
-    }
-
-    @Override
-    public void setFloat(int i, float v) throws SQLException {
-
-    }
-
-    @Override
-    public void setDouble(int i, double v) throws SQLException {
-
-    }
-
-    @Override
-    public void setBigDecimal(int i, BigDecimal bigDecimal) throws SQLException {
-
-    }
-
-    @Override
-    public void setString(int i, String s) throws SQLException {
-
-    }
-
-    @Override
-    public void setBytes(int i, byte[] bytes) throws SQLException {
-
-    }
-
-    @Override
-    public void setDate(int i, Date date) throws SQLException {
-
-    }
-
-    @Override
-    public void setTime(int i, Time time) throws SQLException {
-
-    }
-
-    @Override
-    public void setTimestamp(int i, Timestamp timestamp) throws SQLException {
-
-    }
-
-    @Override
-    public void setAsciiStream(int i, InputStream inputStream, int i1) throws SQLException {
-
-    }
-
-    @Override
-    public void setUnicodeStream(int i, InputStream inputStream, int i1) throws SQLException {
-
-    }
-
-    @Override
-    public void setBinaryStream(int i, InputStream inputStream, int i1) throws SQLException {
-
-    }
-
-    @Override
-    public void clearParameters() throws SQLException {
-
-    }
-
-    @Override
-    public void setObject(int i, Object o, int i1) throws SQLException {
-
-    }
-
-    @Override
-    public void setObject(int i, Object o) throws SQLException {
-
-    }
-
-    @Override
-    public boolean execute() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public void addBatch() throws SQLException {
-
-    }
-
-    @Override
-    public void setCharacterStream(int i, Reader reader, int i1) throws SQLException {
-
-    }
-
-    @Override
-    public void setRef(int i, Ref ref) throws SQLException {
-
-    }
-
-    @Override
-    public void setBlob(int i, Blob blob) throws SQLException {
-
-    }
-
-    @Override
-    public void setClob(int i, Clob clob) throws SQLException {
-
-    }
-
-    @Override
-    public void setArray(int i, Array array) throws SQLException {
-
-    }
-
-    @Override
-    public ResultSetMetaData getMetaData() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public void setDate(int i, Date date, Calendar calendar) throws SQLException {
-
-    }
-
-    @Override
-    public void setTime(int i, Time time, Calendar calendar) throws SQLException {
-
-    }
-
-    @Override
-    public void setTimestamp(int i, Timestamp timestamp, Calendar calendar) throws SQLException {
-
-    }
-
-    @Override
-    public void setNull(int i, int i1, String s) throws SQLException {
-
-    }
-
-    @Override
-    public void setURL(int i, URL url) throws SQLException {
-
-    }
-
-    @Override
-    public ParameterMetaData getParameterMetaData() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public void setRowId(int i, RowId rowId) throws SQLException {
-
-    }
-
-    @Override
-    public void setNString(int i, String s) throws SQLException {
-
-    }
-
-    @Override
-    public void setNCharacterStream(int i, Reader reader, long l) throws SQLException {
-
-    }
-
-    @Override
-    public void setNClob(int i, NClob nClob) throws SQLException {
-
-    }
-
-    @Override
-    public void setClob(int i, Reader reader, long l) throws SQLException {
-
-    }
-
-    @Override
-    public void setBlob(int i, InputStream inputStream, long l) throws SQLException {
-
-    }
-
-    @Override
-    public void setNClob(int i, Reader reader, long l) throws SQLException {
-
-    }
-
-    @Override
-    public void setSQLXML(int i, SQLXML sqlxml) throws SQLException {
-
-    }
-
-    @Override
-    public void setObject(int i, Object o, int i1, int i2) throws SQLException {
-
-    }
-
-    @Override
-    public void setAsciiStream(int i, InputStream inputStream, long l) throws SQLException {
-
-    }
-
-    @Override
-    public void setBinaryStream(int i, InputStream inputStream, long l) throws SQLException {
-
-    }
-
-    @Override
-    public void setCharacterStream(int i, Reader reader, long l) throws SQLException {
-
-    }
-
-    @Override
-    public void setAsciiStream(int i, InputStream inputStream) throws SQLException {
-
-    }
-
-    @Override
-    public void setBinaryStream(int i, InputStream inputStream) throws SQLException {
-
-    }
-
-    @Override
-    public void setCharacterStream(int i, Reader reader) throws SQLException {
-
-    }
-
-    @Override
-    public void setNCharacterStream(int i, Reader reader) throws SQLException {
-
-    }
-
-    @Override
-    public void setClob(int i, Reader reader) throws SQLException {
-
-    }
-
-    @Override
-    public void setBlob(int i, InputStream inputStream) throws SQLException {
-
-    }
-
-    @Override
-    public void setNClob(int i, Reader reader) throws SQLException {
-
-    }
-
-    @Override
-    public ResultSet executeQuery(String s) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public int executeUpdate(String s) throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public void close() throws SQLException {
-
-    }
-
-    @Override
-    public int getMaxFieldSize() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public void setMaxFieldSize(int i) throws SQLException {
-
-    }
-
-    @Override
-    public int getMaxRows() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public void setMaxRows(int i) throws SQLException {
-
-    }
-
-    @Override
-    public void setEscapeProcessing(boolean b) throws SQLException {
-
-    }
-
-    @Override
-    public int getQueryTimeout() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public void setQueryTimeout(int i) throws SQLException {
-
-    }
-
-    @Override
-    public void cancel() throws SQLException {
-
-    }
-
-    @Override
-    public SQLWarning getWarnings() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public void clearWarnings() throws SQLException {
-
-    }
-
-    @Override
-    public void setCursorName(String s) throws SQLException {
-
-    }
-
-    @Override
-    public boolean execute(String s) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public ResultSet getResultSet() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public int getUpdateCount() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public boolean getMoreResults() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public void setFetchDirection(int i) throws SQLException {
-
-    }
-
-    @Override
-    public int getFetchDirection() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public void setFetchSize(int i) throws SQLException {
-
-    }
-
-    @Override
-    public int getFetchSize() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getResultSetConcurrency() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int getResultSetType() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public void addBatch(String s) throws SQLException {
-
-    }
-
-    @Override
-    public void clearBatch() throws SQLException {
-
-    }
-
-    @Override
-    public int[] executeBatch() throws SQLException {
-        return new int[0];
-    }
-
-    @Override
-    public Connection getConnection() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public boolean getMoreResults(int i) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public ResultSet getGeneratedKeys() throws SQLException {
-        return null;
-    }
-
-    @Override
-    public int executeUpdate(String s, int i) throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int executeUpdate(String s, int[] ints) throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public int executeUpdate(String s, String[] strings) throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public boolean execute(String s, int i) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean execute(String s, int[] ints) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public boolean execute(String s, String[] strings) throws SQLException {
-        return false;
-    }
-
-    @Override
-    public int getResultSetHoldability() throws SQLException {
-        return 0;
-    }
-
-    @Override
-    public boolean isClosed() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public void setPoolable(boolean b) throws SQLException {
-
-    }
-
-    @Override
-    public boolean isPoolable() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public void closeOnCompletion() throws SQLException {
-
-    }
-
-    @Override
-    public boolean isCloseOnCompletion() throws SQLException {
-        return false;
-    }
-
-    @Override
-    public <T> T unwrap(Class<T> aClass) throws SQLException {
-        return null;
-    }
-
-    @Override
-    public boolean isWrapperFor(Class<?> aClass) throws SQLException {
-        return false;
-    }
+  private final StarlakeConnection connection;
+  private final PreparedStatement wrapped;
+
+  public StarlakePreparedStatement(StarlakeConnection connection, PreparedStatement wrapped) {
+    this.connection = connection;
+    this.wrapped = wrapped;
+  }
+
+  @Override
+  public ResultSet executeQuery() throws SQLException {
+    return new StarlakeResultSet(wrapped.executeQuery());
+  }
+
+  @Override
+  public int executeUpdate() throws SQLException {
+    return wrapped.executeUpdate();
+  }
+
+  @Override
+  public void setNull(int parameterIndex, int sqlType) throws SQLException {
+    wrapped.setNull(parameterIndex, sqlType);
+  }
+
+  @Override
+  public void setBoolean(int parameterIndex, boolean x) throws SQLException {
+    wrapped.setBoolean(parameterIndex, x);
+  }
+
+  @Override
+  public void setByte(int parameterIndex, byte x) throws SQLException {
+    wrapped.setByte(parameterIndex, x);
+  }
+
+  @Override
+  public void setShort(int parameterIndex, short x) throws SQLException {
+    wrapped.setShort(parameterIndex, x);
+  }
+
+  @Override
+  public void setInt(int parameterIndex, int x) throws SQLException {
+    wrapped.setInt(parameterIndex, x);
+  }
+
+  @Override
+  public void setLong(int parameterIndex, long x) throws SQLException {
+    wrapped.setLong(parameterIndex, x);
+  }
+
+  @Override
+  public void setFloat(int parameterIndex, float x) throws SQLException {
+    wrapped.setFloat(parameterIndex, x);
+  }
+
+  @Override
+  public void setDouble(int parameterIndex, double x) throws SQLException {
+    wrapped.setDouble(parameterIndex, x);
+  }
+
+  @Override
+  public void setBigDecimal(int parameterIndex, BigDecimal x) throws SQLException {
+    wrapped.setBigDecimal(parameterIndex, x);
+  }
+
+  @Override
+  public void setString(int parameterIndex, String x) throws SQLException {
+    wrapped.setString(parameterIndex, x);
+  }
+
+  @Override
+  public void setBytes(int parameterIndex, byte[] x) throws SQLException {
+    wrapped.setBytes(parameterIndex, x);
+  }
+
+  @Override
+  public void setDate(int parameterIndex, Date x) throws SQLException {
+    wrapped.setDate(parameterIndex, x);
+  }
+
+  @Override
+  public void setTime(int parameterIndex, Time x) throws SQLException {
+    wrapped.setTime(parameterIndex, x);
+  }
+
+  @Override
+  public void setTimestamp(int parameterIndex, Timestamp x) throws SQLException {
+    wrapped.setTimestamp(parameterIndex, x);
+  }
+
+  @Override
+  public void setAsciiStream(int parameterIndex, InputStream x, int length) throws SQLException {
+    wrapped.setAsciiStream(parameterIndex, x, length);
+  }
+
+  @Deprecated(since = "1.2")
+  @Override
+  public void setUnicodeStream(int parameterIndex, InputStream x, int length) throws SQLException {
+    wrapped.setUnicodeStream(parameterIndex, x, length);
+  }
+
+  @Override
+  public void setBinaryStream(int parameterIndex, InputStream x, int length) throws SQLException {
+    wrapped.setBinaryStream(parameterIndex, x, length);
+  }
+
+  @Override
+  public void clearParameters() throws SQLException {
+    wrapped.clearParameters();
+  }
+
+  @Override
+  public void setObject(int parameterIndex, Object x, int targetSqlType) throws SQLException {
+    wrapped.setObject(parameterIndex, x, targetSqlType);
+  }
+
+  @Override
+  public void setObject(int parameterIndex, Object x) throws SQLException {
+    wrapped.setObject(parameterIndex, x);
+  }
+
+  @Override
+  public boolean execute() throws SQLException {
+    return wrapped.execute();
+  }
+
+  @Override
+  public void addBatch() throws SQLException {
+    wrapped.addBatch();
+  }
+
+  @Override
+  public void setCharacterStream(int parameterIndex, Reader reader, int length)
+      throws SQLException {
+    wrapped.setCharacterStream(parameterIndex, reader, length);
+  }
+
+  @Override
+  public void setRef(int parameterIndex, Ref x) throws SQLException {
+    wrapped.setRef(parameterIndex, x);
+  }
+
+  @Override
+  public void setBlob(int parameterIndex, Blob x) throws SQLException {
+    wrapped.setBlob(parameterIndex, x);
+  }
+
+  @Override
+  public void setClob(int parameterIndex, Clob x) throws SQLException {
+    wrapped.setClob(parameterIndex, x);
+  }
+
+  @Override
+  public void setArray(int parameterIndex, Array x) throws SQLException {
+    wrapped.setArray(parameterIndex, x);
+  }
+
+  @Override
+  public ResultSetMetaData getMetaData() throws SQLException {
+    return new StarlakeResultSetMetaData(wrapped.getMetaData());
+  }
+
+  @Override
+  public void setDate(int parameterIndex, Date x, Calendar cal) throws SQLException {
+    wrapped.setDate(parameterIndex, x, cal);
+  }
+
+  @Override
+  public void setTime(int parameterIndex, Time x, Calendar cal) throws SQLException {
+    wrapped.setTime(parameterIndex, x, cal);
+  }
+
+  @Override
+  public void setTimestamp(int parameterIndex, Timestamp x, Calendar cal) throws SQLException {
+    wrapped.setTimestamp(parameterIndex, x, cal);
+  }
+
+  @Override
+  public void setNull(int parameterIndex, int sqlType, String typeName) throws SQLException {
+    wrapped.setNull(parameterIndex, sqlType, typeName);
+  }
+
+  @Override
+  public void setURL(int parameterIndex, URL x) throws SQLException {
+    wrapped.setURL(parameterIndex, x);
+  }
+
+  @Override
+  public ParameterMetaData getParameterMetaData() throws SQLException {
+    return wrapped.getParameterMetaData();
+  }
+
+  @Override
+  public void setRowId(int parameterIndex, RowId x) throws SQLException {
+    wrapped.setRowId(parameterIndex, x);
+  }
+
+  @Override
+  public void setNString(int parameterIndex, String value) throws SQLException {
+    wrapped.setNString(parameterIndex, value);
+  }
+
+  @Override
+  public void setNCharacterStream(int parameterIndex, Reader value, long length)
+      throws SQLException {
+    wrapped.setNCharacterStream(parameterIndex, value, length);
+  }
+
+  @Override
+  public void setNClob(int parameterIndex, NClob value) throws SQLException {
+    wrapped.setNClob(parameterIndex, value);
+  }
+
+  @Override
+  public void setClob(int parameterIndex, Reader reader, long length) throws SQLException {
+    wrapped.setClob(parameterIndex, reader, length);
+  }
+
+  @Override
+  public void setBlob(int parameterIndex, InputStream inputStream, long length)
+      throws SQLException {
+    wrapped.setBlob(parameterIndex, inputStream, length);
+  }
+
+  @Override
+  public void setNClob(int parameterIndex, Reader reader, long length) throws SQLException {
+    wrapped.setNClob(parameterIndex, reader, length);
+  }
+
+  @Override
+  public void setSQLXML(int parameterIndex, SQLXML xmlObject) throws SQLException {
+    wrapped.setSQLXML(parameterIndex, xmlObject);
+  }
+
+  @Override
+  public void setObject(int parameterIndex, Object x, int targetSqlType, int scaleOrLength)
+      throws SQLException {
+    wrapped.setObject(parameterIndex, x, targetSqlType, scaleOrLength);
+  }
+
+  @Override
+  public void setAsciiStream(int parameterIndex, InputStream x, long length) throws SQLException {
+    wrapped.setAsciiStream(parameterIndex, x, length);
+  }
+
+  @Override
+  public void setBinaryStream(int parameterIndex, InputStream x, long length) throws SQLException {
+    wrapped.setBinaryStream(parameterIndex, x, length);
+  }
+
+  @Override
+  public void setCharacterStream(int parameterIndex, Reader reader, long length)
+      throws SQLException {
+    wrapped.setCharacterStream(parameterIndex, reader, length);
+  }
+
+  @Override
+  public void setAsciiStream(int parameterIndex, InputStream x) throws SQLException {
+    wrapped.setAsciiStream(parameterIndex, x);
+  }
+
+  @Override
+  public void setBinaryStream(int parameterIndex, InputStream x) throws SQLException {
+    wrapped.setBinaryStream(parameterIndex, x);
+  }
+
+  @Override
+  public void setCharacterStream(int parameterIndex, Reader reader) throws SQLException {
+    wrapped.setCharacterStream(parameterIndex, reader);
+  }
+
+  @Override
+  public void setNCharacterStream(int parameterIndex, Reader value) throws SQLException {
+    wrapped.setNCharacterStream(parameterIndex, value);
+  }
+
+  @Override
+  public void setClob(int parameterIndex, Reader reader) throws SQLException {
+    wrapped.setClob(parameterIndex, reader);
+  }
+
+  @Override
+  public void setBlob(int parameterIndex, InputStream inputStream) throws SQLException {
+    wrapped.setBlob(parameterIndex, inputStream);
+  }
+
+  @Override
+  public void setNClob(int parameterIndex, Reader reader) throws SQLException {
+    wrapped.setNClob(parameterIndex, reader);
+  }
+
+  @Override
+  public void setObject(int parameterIndex, Object x, SQLType targetSqlType, int scaleOrLength)
+      throws SQLException {
+    wrapped.setObject(parameterIndex, x, targetSqlType, scaleOrLength);
+  }
+
+  @Override
+  public void setObject(int parameterIndex, Object x, SQLType targetSqlType) throws SQLException {
+    wrapped.setObject(parameterIndex, x, targetSqlType);
+  }
+
+  @Override
+  public long executeLargeUpdate() throws SQLException {
+    return wrapped.executeLargeUpdate();
+  }
+
+  @Override
+  public ResultSet executeQuery(String sql) throws SQLException {
+    return new StarlakeResultSet(wrapped.executeQuery(sql));
+  }
+
+  @Override
+  public int executeUpdate(String sql) throws SQLException {
+    return wrapped.executeUpdate(sql);
+  }
+
+  @Override
+  public void close() throws SQLException {
+    wrapped.close();
+  }
+
+  @Override
+  public int getMaxFieldSize() throws SQLException {
+    return wrapped.getMaxFieldSize();
+  }
+
+  @Override
+  public void setMaxFieldSize(int max) throws SQLException {
+    wrapped.setMaxFieldSize(max);
+  }
+
+  @Override
+  public int getMaxRows() throws SQLException {
+    return wrapped.getMaxRows();
+  }
+
+  @Override
+  public void setMaxRows(int max) throws SQLException {
+    wrapped.setMaxRows(max);
+  }
+
+  @Override
+  public void setEscapeProcessing(boolean enable) throws SQLException {
+    wrapped.setEscapeProcessing(enable);
+  }
+
+  @Override
+  public int getQueryTimeout() throws SQLException {
+    return wrapped.getQueryTimeout();
+  }
+
+  @Override
+  public void setQueryTimeout(int seconds) throws SQLException {
+    wrapped.setQueryTimeout(seconds);
+  }
+
+  @Override
+  public void cancel() throws SQLException {
+    wrapped.cancel();
+  }
+
+  @Override
+  public SQLWarning getWarnings() throws SQLException {
+    return wrapped.getWarnings();
+  }
+
+  @Override
+  public void clearWarnings() throws SQLException {
+    wrapped.clearWarnings();
+  }
+
+  @Override
+  public void setCursorName(String name) throws SQLException {
+    wrapped.setCursorName(name);
+  }
+
+  @Override
+  public boolean execute(String sql) throws SQLException {
+    return wrapped.execute(sql);
+  }
+
+  @Override
+  public ResultSet getResultSet() throws SQLException {
+    return new StarlakeResultSet(wrapped.getResultSet());
+  }
+
+  @Override
+  public int getUpdateCount() throws SQLException {
+    return wrapped.getUpdateCount();
+  }
+
+  @Override
+  public boolean getMoreResults() throws SQLException {
+    return wrapped.getMoreResults();
+  }
+
+  @Override
+  public void setFetchDirection(int direction) throws SQLException {
+    wrapped.setFetchDirection(direction);
+  }
+
+  @Override
+  public int getFetchDirection() throws SQLException {
+    return wrapped.getFetchDirection();
+  }
+
+  @Override
+  public void setFetchSize(int rows) throws SQLException {
+    wrapped.setFetchSize(rows);
+  }
+
+  @Override
+  public int getFetchSize() throws SQLException {
+    return wrapped.getFetchSize();
+  }
+
+  @Override
+  public int getResultSetConcurrency() throws SQLException {
+    return wrapped.getResultSetConcurrency();
+  }
+
+  @Override
+  public int getResultSetType() throws SQLException {
+    return wrapped.getResultSetType();
+  }
+
+  @Override
+  public void addBatch(String sql) throws SQLException {
+    wrapped.addBatch(sql);
+  }
+
+  @Override
+  public void clearBatch() throws SQLException {
+    wrapped.clearBatch();
+  }
+
+  @Override
+  public int[] executeBatch() throws SQLException {
+    return wrapped.executeBatch();
+  }
+
+  @Override
+  public Connection getConnection() throws SQLException {
+    return connection;
+  }
+
+  @Override
+  public boolean getMoreResults(int current) throws SQLException {
+    return wrapped.getMoreResults(current);
+  }
+
+  @Override
+  public ResultSet getGeneratedKeys() throws SQLException {
+    return new StarlakeResultSet(wrapped.getGeneratedKeys());
+  }
+
+  @Override
+  public int executeUpdate(String sql, int autoGeneratedKeys) throws SQLException {
+    return wrapped.executeUpdate(sql, autoGeneratedKeys);
+  }
+
+  @Override
+  public int executeUpdate(String sql, int[] columnIndexes) throws SQLException {
+    return wrapped.executeUpdate(sql, columnIndexes);
+  }
+
+  @Override
+  public int executeUpdate(String sql, String[] columnNames) throws SQLException {
+    return wrapped.executeUpdate(sql, columnNames);
+  }
+
+  @Override
+  public boolean execute(String sql, int autoGeneratedKeys) throws SQLException {
+    return wrapped.execute(sql, autoGeneratedKeys);
+  }
+
+  @Override
+  public boolean execute(String sql, int[] columnIndexes) throws SQLException {
+    return wrapped.execute(sql, columnIndexes);
+  }
+
+  @Override
+  public boolean execute(String sql, String[] columnNames) throws SQLException {
+    return wrapped.execute(sql, columnNames);
+  }
+
+  @Override
+  public int getResultSetHoldability() throws SQLException {
+    return wrapped.getResultSetHoldability();
+  }
+
+  @Override
+  public boolean isClosed() throws SQLException {
+    return wrapped.isClosed();
+  }
+
+  @Override
+  public void setPoolable(boolean poolable) throws SQLException {
+    wrapped.setPoolable(poolable);
+  }
+
+  @Override
+  public boolean isPoolable() throws SQLException {
+    return wrapped.isPoolable();
+  }
+
+  @Override
+  public void closeOnCompletion() throws SQLException {
+    wrapped.closeOnCompletion();
+  }
+
+  @Override
+  public boolean isCloseOnCompletion() throws SQLException {
+    return wrapped.isCloseOnCompletion();
+  }
+
+  @Override
+  public long getLargeUpdateCount() throws SQLException {
+    return wrapped.getLargeUpdateCount();
+  }
+
+  @Override
+  public void setLargeMaxRows(long max) throws SQLException {
+    wrapped.setLargeMaxRows(max);
+  }
+
+  @Override
+  public long getLargeMaxRows() throws SQLException {
+    return wrapped.getLargeMaxRows();
+  }
+
+  @Override
+  public long[] executeLargeBatch() throws SQLException {
+    return wrapped.executeLargeBatch();
+  }
+
+  @Override
+  public long executeLargeUpdate(String sql) throws SQLException {
+    return wrapped.executeLargeUpdate(sql);
+  }
+
+  @Override
+  public long executeLargeUpdate(String sql, int autoGeneratedKeys) throws SQLException {
+    return wrapped.executeLargeUpdate(sql, autoGeneratedKeys);
+  }
+
+  @Override
+  public long executeLargeUpdate(String sql, int[] columnIndexes) throws SQLException {
+    return wrapped.executeLargeUpdate(sql, columnIndexes);
+  }
+
+  @Override
+  public long executeLargeUpdate(String sql, String[] columnNames) throws SQLException {
+    return wrapped.executeLargeUpdate(sql, columnNames);
+  }
+
+  @Override
+  public String enquoteLiteral(String val) throws SQLException {
+    return wrapped.enquoteLiteral(val);
+  }
+
+  @Override
+  public String enquoteIdentifier(String identifier, boolean alwaysQuote) throws SQLException {
+    return wrapped.enquoteIdentifier(identifier, alwaysQuote);
+  }
+
+  @Override
+  public boolean isSimpleIdentifier(String identifier) throws SQLException {
+    return wrapped.isSimpleIdentifier(identifier);
+  }
+
+  @Override
+  public String enquoteNCharLiteral(String val) throws SQLException {
+    return wrapped.enquoteNCharLiteral(val);
+  }
+
+  @Override
+  public <T> T unwrap(Class<T> iface) throws SQLException {
+    return wrapped.unwrap(iface);
+  }
+
+  @Override
+  public boolean isWrapperFor(Class<?> iface) throws SQLException {
+    return wrapped.isWrapperFor(iface);
+  }
 }

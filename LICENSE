@@ -1,4 +1,4 @@
-Starlake.AI JSQLTranspiler is a SQL to DuckDB Transpiler.
+Starlake.AI JDBC Driver is a JDBC Proxy Driver for supporting staging of DDL and DML statements.
 Copyright (C) ${year} ${name} <${email}>
 
 Licensed under the Apache License, Version 2.0 (the "License");

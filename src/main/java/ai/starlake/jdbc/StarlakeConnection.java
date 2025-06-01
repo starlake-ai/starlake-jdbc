@@ -16,6 +16,10 @@
  */
 package ai.starlake.jdbc;
 
+import ai.starlake.jdbc.StarlakeSession.Status;
+import ai.starlake.transpiler.schema.CaseInsensitiveLinkedHashMap;
+import net.sf.jsqlparser.statement.SessionStatement;
+
 import java.sql.Array;
 import java.sql.Blob;
 import java.sql.CallableStatement;
@@ -35,9 +39,15 @@ import java.sql.Struct;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.Executor;
+import java.util.logging.Logger;
 
 public class StarlakeConnection implements Connection {
+  private final Logger LOGGER = Logger.getLogger(StarlakeConnection.class.getName());
   private final Connection wrapped;
+
+  public StarlakeSession currentSession = null;
+  final CaseInsensitiveLinkedHashMap<StarlakeSession> sessions =
+      new CaseInsensitiveLinkedHashMap<>();
 
   public StarlakeConnection(Connection wrapped) {
     this.wrapped = wrapped;
@@ -355,5 +365,147 @@ public class StarlakeConnection implements Connection {
   @Override
   public boolean isWrapperFor(Class<?> iface) throws SQLException {
     return wrapped.isWrapperFor(iface);
+  }
+
+  public boolean execute(SessionStatement st) throws SQLException {
+    LOGGER.info(st.toString());
+    switch (st.getAction()) {
+      case START:
+        if (st.getId() == null) {
+          startSession();
+        } else {
+          startSession(st.getId());
+        }
+        break;
+      case APPLY:
+        if (st.getId() == null) {
+          applySession();
+        } else {
+          applySession(st.getId());
+        }
+        break;
+      case DROP:
+        if (st.getId() == null) {
+          dropSession();
+        } else {
+          dropSession(st.getId());
+        }
+        break;
+      case SHOW:
+        if (st.getId() == null) {
+          showSession();
+        } else {
+          showSession(st.getId());
+        }
+        break;
+      case DESCRIBE:
+        describeSession();
+        break;
+    }
+    return false;
+  }
+
+  public void startSession() throws SQLException {
+    if (currentSession != null && currentSession.getStatus() == Status.STARTED) {
+      throw new RuntimeException("Session in progress: " + currentSession.getSessionId());
+    } else {
+      currentSession = new StarlakeSession(this);
+      sessions.put(currentSession.getSessionId(), currentSession);
+      LOGGER.info("Session started: " + currentSession.getSessionId());
+    }
+  }
+
+  public void startSession(String id) throws SQLException {
+    if (currentSession != null && currentSession.getStatus() == Status.STARTED) {
+      throw new RuntimeException("Session in progress: " + currentSession.getSessionId());
+    } else {
+      currentSession = new StarlakeSession(this, id);
+      sessions.put(id, currentSession);
+      LOGGER.info("Session started: " + currentSession.getSessionId());
+    }
+  }
+
+  public void applySession() {
+    if (currentSession == null) {
+      throw new RuntimeException("No current Session in progress.");
+    } else if (currentSession.getStatus() != Status.STARTED) {
+      throw new RuntimeException("Session not in progress: " + currentSession.getSessionId()
+          + " -> " + currentSession.getStatus());
+    } else {
+      currentSession.apply();
+      LOGGER.info("Session applied: " + currentSession.getSessionId());
+    }
+  }
+
+  public void applySession(String id) {
+    if (!sessions.containsKey(id)) {
+      throw new RuntimeException("Session not found: " + id);
+    } else {
+      currentSession = sessions.get(id);
+    }
+
+    if (currentSession.getStatus() != Status.STARTED) {
+      throw new RuntimeException("Session not in progress: " + currentSession.getSessionId()
+          + " -> " + currentSession.getStatus());
+    } else {
+      currentSession.apply();
+      LOGGER.info("Session applied: " + currentSession.getSessionId());
+    }
+  }
+
+  public void dropSession() {
+    if (currentSession == null) {
+      throw new RuntimeException("No current Session in progress.");
+    } else if (currentSession.getStatus() != Status.STARTED) {
+      throw new RuntimeException("No current Session in progress: " + currentSession.getSessionId()
+          + " -> " + currentSession.getStatus());
+    } else {
+      currentSession.drop();
+      LOGGER.info("Session dropped: " + currentSession.getSessionId());
+    }
+  }
+
+  public void dropSession(String id) {
+    if (!sessions.containsKey(id)) {
+      throw new RuntimeException("Session not found: " + id);
+    } else {
+      currentSession = sessions.get(id);
+    }
+
+    if (currentSession.getStatus() != Status.STARTED) {
+      throw new RuntimeException("Session not in progress: " + currentSession.getSessionId()
+          + " -> " + currentSession.getStatus());
+    } else {
+      currentSession.drop();
+      LOGGER.info("Session dropped: " + currentSession.getSessionId());
+    }
+  }
+
+  public void showSession() {
+    if (currentSession == null) {
+      throw new RuntimeException("No current Session in progress.");
+    } else {
+      LOGGER.info("Current Session: " + currentSession.getSessionId() + " -> "
+          + currentSession.getStatus());
+    }
+  }
+
+  public void showSession(String id) {
+    if (!sessions.containsKey(id)) {
+      throw new RuntimeException("Session not found: " + id);
+    } else {
+      StarlakeSession session = sessions.get(id);
+      LOGGER.info("Session: " + session.getSessionId() + " -> " + session.getStatus());
+    }
+  }
+
+  public void describeSession() {
+    if (sessions.isEmpty()) {
+      LOGGER.warning("Sessions are empty.");
+    } else {
+      for (StarlakeSession session : sessions.values()) {
+        LOGGER.info("Session: " + session.getSessionId() + " -> " + session.getStatus());
+      }
+    }
   }
 }

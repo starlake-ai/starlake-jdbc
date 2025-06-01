@@ -1,6 +1,12 @@
-import com.github.spotbugs.snom.SpotBugsReport
-import org.hidetake.groovy.ssh.core.Remote
 import se.bjurr.gitchangelog.plugin.gradle.GitChangelogTask
+import com.nwalsh.gradle.saxon.SaxonXsltTask
+
+buildscript {
+    dependencies {
+        classpath group: 'net.sf.saxon', name: 'Saxon-HE', version: 'latest.release'
+    }
+}
+
 
 plugins {
     id 'java-library'
@@ -19,11 +25,11 @@ plugins {
     id 'org.hidetake.ssh' version "latest.release"
     id "com.github.hierynomus.license" version "latest.release"
     id "se.bjurr.gitchangelog.git-changelog-gradle-plugin" version "latest.release"
+    id "com.nwalsh.gradle.saxon.saxon-gradle" version "latest.release"
     id 'biz.aQute.bnd.builder' version "latest.release"
 }
 
 repositories {
-    mavenLocal()
     mavenCentral()
 
     //Sonatype OSSRH
@@ -45,7 +51,7 @@ configurations {
 }
 
 dependencies {
-    implementation('com.github.jsqlparser:jsqlparser:+'){ changing = true }
+    implementation('com.github.jsqlparser:jsqlparser:5.4-SNAPSHOT'){ changing = true }
     implementation('ai.starlake.jsqltranspiler:jsqltranspiler:+') { changing = true }
 
 
@@ -61,7 +67,7 @@ dependencies {
     testImplementation 'org.duckdb:duckdb_jdbc:1.2.+'
 
     // Java Doc in XML Format
-    xmlDoclet 'com.manticore-projects.tools:xml-doclet:+'
+    xmlDoclet 'com.manticore-projects.tools:xml-doclet:2.+'
 }
 
 configurations.configureEach {
@@ -127,6 +133,28 @@ java {
     }
 }
 
+
+jar {
+    manifest {
+        attributes(
+                "Created-By": System.properties['user.name'],
+                "Automatic-Module-Name": "ai.starlake.jdbc"
+        )
+    }
+
+    bundle {
+        properties.empty()
+        bnd(
+                "Created-By": System.properties.get('user.name'),
+                "Bundle-SymbolicName": "ai.starlake.jdbc",
+                "Import-Package": "*",
+                "Export-Package": "ai.starlake.jdbc.*",
+                "Automatic-Module-Name": "ai.starlake.jdbc"
+        )
+    }
+}
+
+
 javadoc {
     if(JavaVersion.current().isJava9Compatible()) {
         options.addBooleanOption('html5', true)
@@ -135,23 +163,35 @@ javadoc {
 }
 
 tasks.register('xmldoc', Javadoc) {
-    source = sourceSets.main.allJava
-    include("build/generated/javacc/net/sf/jsqlparser/parser/*.java" )
-    include("../JSQLParser/src/main/java/**/*.java")
+    def outFile =  reporting.file(
+            version.endsWith("-SNAPSHOT")
+                    ? "xmlDoclet/javadoc_snapshot.xml"
+                    : "xmlDoclet/javadoc_stable.xml"
+    )
 
+    def rstFile =  reporting.file(
+            version.endsWith("-SNAPSHOT")
+                    ? "xmlDoclet/javadoc_snapshot.rst"
+                    : "xmlDoclet/javadoc_stable.rst"
+    )
+
+    source = sourceSets.main.allJava
+    classpath = sourceSets.main.runtimeClasspath
+
+    title = "API $version"
     destinationDir = reporting.file("xmlDoclet")
     options.docletpath = configurations.xmlDoclet.files as List
     options.doclet = "com.manticore.tools.xmldoclet.XmlDoclet"
-    title = "API $version"
     options.addBooleanOption("rst", true)
     options.addBooleanOption("withFloatingToc", true)
     options.addStringOption("basePackage", "ai.starlake.jdbc")
+    options.addStringOption("filename", outFile.getName())
 
     dependsOn(compileJava)
     doLast {
         copy {
-            from reporting.file("xmlDoclet/javadoc.rst")
-            into "${projectDir}/src/site/sphinx/"
+            from rstFile
+            into layout.projectDirectory.dir("src/site/sphinx/").asFile
         }
     }
 }

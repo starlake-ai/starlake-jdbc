@@ -16,6 +16,10 @@
  */
 package ai.starlake.jdbc;
 
+import net.sf.jsqlparser.JSQLParserException;
+import net.sf.jsqlparser.parser.CCJSqlParserUtil;
+import net.sf.jsqlparser.statement.SessionStatement;
+
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -103,7 +107,21 @@ public class StarlakeStatement implements Statement {
 
   @Override
   public boolean execute(String sql) throws SQLException {
-    return wrapped.execute(sql);
+    try {
+      final net.sf.jsqlparser.statement.Statement st = CCJSqlParserUtil.parse(sql);
+      if (st instanceof SessionStatement) {
+        return connection.execute((SessionStatement) st);
+      } else {
+        if (connection.currentSession != null) {
+          String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
+          return wrapped.execute(rewrittenSql);
+        } else {
+          return wrapped.execute(sql);
+        }
+      }
+    } catch (JSQLParserException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override

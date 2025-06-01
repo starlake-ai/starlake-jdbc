@@ -45,3 +45,4 @@ bin/
 **/javadoc.rst
 **/.~lock.JSQLTranspiler.ods#
 /.idea
+/src/site/sphinx/javadoc_snapshot.rst

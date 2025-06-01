@@ -32,7 +32,6 @@ public class StarlakeDriver implements Driver {
   public static final Logger LOGGER = Logger.getLogger(StarlakeDriver.class.getName());
 
   Driver wrapped;
-
   static {
     try {
       DriverManager.registerDriver(new StarlakeDriver());

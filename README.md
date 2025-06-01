@@ -8,10 +8,47 @@
 Run and test all your DDL/DML statements in a sandboxed session before applying to production:
 
 - connect to your Database using Starlake JDBC Driver as wrapper around the RDBMS' driver
-- start a new session via `START SESSION`, which will create a new staging schema
+- start a new session via `SESSION START`, which will create a new staging schema
 - execute your DDL commands, which will create copies of the affected tables in the staging schema only without altering the existing tables
 - execute your Queries or DML statements, which will be intercepted and rewritten to use the staging schema and tables
-- end your session via `END SESSION` applying all the changes to production or `CANCEL SESSION`
+- end your session via `SESSION APPLY` applying all the changes to production or `SESSION DROP`
+
+```java
+Class.forName("ai.starlake.jdbc.StarlakeDriver");
+
+// Wrap an H2 in memory DB
+Driver driver = DriverManager.getDriver("jdbc:starlake:h2:test");
+
+// Define a session ID
+final String sessionId = "session1";
+
+try (Statement st = conn.createStatement()) {
+
+// is a Starlake Session aware connection
+Assertions.assertInstanceOf(StarlakeConnection.class, conn);
+
+// Start a session
+st.execute("SESSION START " + sessionId);
+Assertions.assertEquals(Status.STARTED,
+    ((StarlakeConnection) conn).currentSession.getStatus());
+
+// Create a table without touching the current schema "PUBLIC"
+st.execute("CREATE TABLE a (b VARCHAR(1));");
+
+assertThatH2SchemaTableNotExists("public", "a");
+assertThatH2SessionTableExists(sessionId, "a");
+
+// Apply the session by creating the table in schema "PUBLIC"
+st.execute("SESSION APPLY session1;");
+
+assertThatH2SchemaTableExists("public", "a");
+assertThatH2SessionNotExists(sessionId);
+
+// Confirm session status
+Assertions.assertEquals(Status.APPLIED,
+    ((StarlakeConnection) conn).currentSession.getStatus());
+}
+```
 
 
 ## License

@@ -16,6 +16,7 @@
  */
 package ai.starlake.jdbc;
 
+import ai.starlake.transpiler.JSQLTranspiler;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.SessionStatement;
@@ -37,12 +38,55 @@ public class StarlakeStatement implements Statement {
 
   @Override
   public ResultSet executeQuery(String sql) throws SQLException {
-    return new StarlakeResultSet(this, wrapped.executeQuery(sql));
+    try {
+      // @todo: avoid double parsing and unpipe into Statement instead of String
+      String unpipedSql = sql;
+              JSQLTranspiler.unpipe(sql, connection.executor, p -> {
+      });
+
+      final net.sf.jsqlparser.statement.Statement st =
+          CCJSqlParserUtil.parse(unpipedSql, connection.executor, parser -> {});
+
+      if (st instanceof SessionStatement) {
+        return connection.executeQuery((SessionStatement) st);
+      } else {
+        if (connection.currentSession != null) {
+          String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
+          return wrapped.executeQuery(rewrittenSql);
+        } else {
+          return wrapped.executeQuery(unpipedSql);
+        }
+      }
+    } catch (JSQLParserException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
   public int executeUpdate(String sql) throws SQLException {
-    return wrapped.executeUpdate(sql);
+    try {
+      // @todo: avoid double parsing and unpipe into Statement instead of String
+      String unpipedSql = JSQLTranspiler.unpipe(sql, connection.executor, p -> {
+      });
+
+      final net.sf.jsqlparser.statement.Statement st =
+              CCJSqlParserUtil.parse(unpipedSql, connection.executor, p -> {
+              });
+
+      if (st instanceof SessionStatement) {
+        connection.execute((SessionStatement) st);
+        return -1;
+      } else {
+        if (connection.currentSession != null) {
+          String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
+          return wrapped.executeUpdate(rewrittenSql);
+        } else {
+          return wrapped.executeUpdate(unpipedSql);
+        }
+      }
+    } catch (JSQLParserException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   @Override
@@ -108,7 +152,14 @@ public class StarlakeStatement implements Statement {
   @Override
   public boolean execute(String sql) throws SQLException {
     try {
-      final net.sf.jsqlparser.statement.Statement st = CCJSqlParserUtil.parse(sql);
+      // @todo: avoid double parsing and unpipe into Statement instead of String
+      String unpipedSql = JSQLTranspiler.unpipe(sql, connection.executor, p -> {
+      });
+
+      final net.sf.jsqlparser.statement.Statement st =
+          CCJSqlParserUtil.parse(unpipedSql, connection.executor, p -> {
+          });
+
       if (st instanceof SessionStatement) {
         return connection.execute((SessionStatement) st);
       } else {
@@ -116,7 +167,7 @@ public class StarlakeStatement implements Statement {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
           return wrapped.execute(rewrittenSql);
         } else {
-          return wrapped.execute(sql);
+          return wrapped.execute(unpipedSql);
         }
       }
     } catch (JSQLParserException e) {

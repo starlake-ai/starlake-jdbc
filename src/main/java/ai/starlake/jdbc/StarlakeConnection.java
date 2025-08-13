@@ -28,6 +28,7 @@ import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.NClob;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLClientInfoException;
 import java.sql.SQLException;
 import java.sql.SQLWarning;
@@ -39,11 +40,15 @@ import java.sql.Struct;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 public class StarlakeConnection implements Connection {
   private final Logger LOGGER = Logger.getLogger(StarlakeConnection.class.getName());
-  private final Connection wrapped;
+  protected final Connection wrapped;
+  protected final ExecutorService executor = Executors.newCachedThreadPool();
 
   public StarlakeSession currentSession = null;
   final CaseInsensitiveLinkedHashMap<StarlakeSession> sessions =
@@ -95,6 +100,12 @@ public class StarlakeConnection implements Connection {
 
   @Override
   public void close() throws SQLException {
+    executor.shutdown();
+    try {
+      executor.awaitTermination(1, TimeUnit.MINUTES);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
     wrapped.close();
   }
 
@@ -403,6 +414,50 @@ public class StarlakeConnection implements Connection {
         break;
     }
     return false;
+  }
+
+  public String getSessionCommand(SessionStatement st) {
+    String id = st.getId() == null ? currentSession.getSessionId() : st.getId();
+    return st.getAction().toString() + " " + id;
+  }
+
+  public ResultSet executeQuery(SessionStatement st) throws SQLException {
+    LOGGER.info(st.toString());
+    switch (st.getAction()) {
+      case START:
+        if (st.getId() == null) {
+          startSession();
+        } else {
+          startSession(st.getId());
+        }
+        return new StarlakeVirtualResultSet("SESSION_COMMAND", getSessionCommand(st));
+      case APPLY:
+        if (st.getId() == null) {
+          applySession();
+        } else {
+          applySession(st.getId());
+        }
+        return new StarlakeVirtualResultSet("SESSION_COMMAND", getSessionCommand(st));
+      case DROP:
+        if (st.getId() == null) {
+          dropSession();
+        } else {
+          dropSession(st.getId());
+        }
+        return new StarlakeVirtualResultSet("SESSION_COMMAND", getSessionCommand(st));
+      case SHOW:
+        if (st.getId() == null) {
+          showSession();
+        } else {
+          showSession(st.getId());
+        }
+        return new StarlakeVirtualResultSet("SESSION_COMMAND", getSessionCommand(st));
+      case DESCRIBE:
+        describeSession();
+        return new StarlakeVirtualResultSet("SESSION_COMMAND", getSessionCommand(st));
+      default:
+        throw new IllegalStateException("Unexpected value: " + st.getAction());
+    }
   }
 
   public void startSession() throws SQLException {

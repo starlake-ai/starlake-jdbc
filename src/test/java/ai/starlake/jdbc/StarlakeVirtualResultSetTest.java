@@ -164,7 +164,7 @@ public class StarlakeVirtualResultSetTest {
     assertTrue(resultSet.getBoolean("active"));
     assertEquals(Date.valueOf("1998-05-15"), resultSet.getDate("birth_date"));
 
-    // Test case insensitive lookup
+    // Test case-insensitive lookup
     assertEquals(1, resultSet.getInt("ID"));
     assertEquals("John Doe", resultSet.getString("NAME"));
   }
@@ -179,7 +179,7 @@ public class StarlakeVirtualResultSetTest {
     assertEquals(5, resultSet.findColumn("active"));
     assertEquals(6, resultSet.findColumn("birth_date"));
 
-    // Test case insensitive
+    // Test case-insensitive
     assertEquals(1, resultSet.findColumn("ID"));
     assertEquals(2, resultSet.findColumn("Name"));
 
@@ -376,18 +376,18 @@ public class StarlakeVirtualResultSetTest {
     Class<?>[] emptyTypes = {Integer.class, String.class};
     Object[][] emptyData = {};
 
-    StarlakeVirtualResultSet emptyRS =
-        new StarlakeVirtualResultSet(emptyColumns, emptyTypes, emptyData);
+    try (StarlakeVirtualResultSet emptyRS =
+        new StarlakeVirtualResultSet(emptyColumns, emptyTypes, emptyData)) {
+      assertTrue(emptyRS.isBeforeFirst());
+      //@todo: assertFalse(emptyRS.isAfterLast());
+      assertFalse(emptyRS.next());
+      assertFalse(emptyRS.first());
+      assertFalse(emptyRS.last());
+      assertEquals(0, emptyRS.getRow());
 
-    assertTrue(emptyRS.isBeforeFirst());
-    //@todo: assertFalse(emptyRS.isAfterLast());
-    assertFalse(emptyRS.next());
-    assertFalse(emptyRS.first());
-    assertFalse(emptyRS.last());
-    assertEquals(0, emptyRS.getRow());
-
-    emptyRS.afterLast();
-    assertTrue(emptyRS.isAfterLast());
-    assertFalse(emptyRS.previous());
+      emptyRS.afterLast();
+      assertTrue(emptyRS.isAfterLast());
+      assertFalse(emptyRS.previous());
+    }
   }
 }

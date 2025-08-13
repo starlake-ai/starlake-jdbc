@@ -91,10 +91,17 @@ public class StarlakeSessionTest {
           ((StarlakeConnection) conn).currentSession.getStatus());
 
       // Create a table without touching the current schema "PUBLIC"
-      st.execute("CREATE TABLE a (b VARCHAR(1));");
+      st.executeUpdate("CREATE TABLE a (b VARCHAR(1)); ");
+      st.executeUpdate("INSERT INTO a VALUES('1'); ");
 
       assertThatH2SchemaTableNotExists("public", "a");
       assertThatH2SessionTableExists(sessionId, "a");
+
+      // query this table using the rewrite
+      try (ResultSet rs = st.executeQuery("SELECT * FROM public.a")) {
+        Assertions.assertTrue(rs.next());
+        Assertions.assertEquals("1", rs.getString(1));
+      }
 
       // Apply the session by creating the table in schema "PUBLIC"
       st.execute("SESSION APPLY session1;");

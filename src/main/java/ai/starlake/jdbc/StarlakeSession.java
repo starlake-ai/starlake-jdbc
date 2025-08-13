@@ -1,30 +1,24 @@
 package ai.starlake.jdbc;
 
+import ai.starlake.transpiler.JSQLReplacer;
 import ai.starlake.transpiler.schema.CaseInsensitiveLinkedHashMap;
+import net.sf.jsqlparser.expression.ExpressionVisitor;
+import net.sf.jsqlparser.expression.ExpressionVisitorAdapter;
 import net.sf.jsqlparser.schema.Table;
-import net.sf.jsqlparser.statement.alter.Alter;
-import net.sf.jsqlparser.statement.alter.RenameTableStatement;
-import net.sf.jsqlparser.statement.create.index.CreateIndex;
+import net.sf.jsqlparser.statement.Statement;
+import net.sf.jsqlparser.statement.StatementVisitorAdapter;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
-import net.sf.jsqlparser.statement.create.view.AlterView;
-import net.sf.jsqlparser.statement.create.view.CreateView;
 import net.sf.jsqlparser.statement.delete.Delete;
 import net.sf.jsqlparser.statement.drop.Drop;
 import net.sf.jsqlparser.statement.insert.Insert;
 import net.sf.jsqlparser.statement.merge.Merge;
-import net.sf.jsqlparser.statement.refresh.RefreshMaterializedViewStatement;
+import net.sf.jsqlparser.statement.select.FromItemVisitorAdapter;
+import net.sf.jsqlparser.statement.select.PlainSelect;
+import net.sf.jsqlparser.statement.select.SelectVisitorAdapter;
 import net.sf.jsqlparser.statement.truncate.Truncate;
 import net.sf.jsqlparser.statement.update.Update;
-import net.sf.jsqlparser.statement.upsert.Upsert;
-import net.sf.jsqlparser.util.deparser.AlterDeParser;
-import net.sf.jsqlparser.util.deparser.ExpressionDeParser;
-import net.sf.jsqlparser.util.deparser.MergeDeParser;
-import net.sf.jsqlparser.util.deparser.SelectDeParser;
-import net.sf.jsqlparser.util.deparser.StatementDeParser;
-import net.sf.jsqlparser.util.deparser.UpsertDeParser;
 
 import java.math.BigInteger;
-import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.TreeMap;
@@ -42,186 +36,99 @@ public class StarlakeSession {
     STARTED, APPLIED, DROPPED
   }
 
-  private final Connection conn;
+  private final StarlakeConnection conn;
   private final String sessionId;
   private Status status;
   private final Instant startInstant;
   private Instant endInstant;
-
-  private final CaseInsensitiveLinkedHashMap<Table> tables = new CaseInsensitiveLinkedHashMap<>();
+  private final CaseInsensitiveLinkedHashMap<Table> replacementTables = new CaseInsensitiveLinkedHashMap<>();
   private final TreeMap<Instant, String> statements = new TreeMap<>();
 
-  private final StringBuilder builder = new StringBuilder();
-  private final SelectDeParser selectDeParser = new SelectDeParser(builder) {
+  private final ExpressionVisitor<Boolean> modifyingTableExpressionVisitor =
+          new ExpressionVisitorAdapter<>();
+
+  private final SelectVisitorAdapter<Boolean> modifyingTableSelectVisitor = new SelectVisitorAdapter<>(modifyingTableExpressionVisitor) {
     @Override
-    public <S> StringBuilder visit(Table tableName, S context) {
-      if (tables.containsKey(tableName.getFullyQualifiedName())) {
-        tableName.setSchemaName(sessionId);
-      }
-      return super.visit(tableName, context);
+    public void visit(PlainSelect plainSelect) {
+      // detect any INSERT INTO tables
+      modifyingTableVisitor.visitFromItem(plainSelect.getIntoTempTable(), null);
+      modifyingTableVisitor.visitTables(plainSelect.getIntoTables(), null);
+
+      super.visit(plainSelect);
     }
   };
-  private final ExpressionDeParser expressionDeParser =
-      new ExpressionDeParser(selectDeParser, builder);
-  private final StatementDeParser statementDeParser =
-      new StatementDeParser(expressionDeParser, selectDeParser, builder) {
+
+  // detects tables to be modified and add those to the Replacement Tables
+  private final FromItemVisitorAdapter<Boolean> modifyingTableVisitor = new FromItemVisitorAdapter<>(modifyingTableSelectVisitor, modifyingTableExpressionVisitor) {
+    @Override
+    public <S> Boolean visit(Table table, S context) {
+      String originalName = table.getFullyQualifiedName();
+      if (!replacementTables.containsKey(originalName)) {
+        replacementTables.put(originalName, new Table( table.withSchemaName(sessionId).getFullyQualifiedName()) );
+        return true;
+      } else {
+        return false;
+      }
+    }
+  };
+
+  private final StatementVisitorAdapter<Void> statementVisitor =
+      new StatementVisitorAdapter<>() {
         @Override
-        public <S> StringBuilder visit(CreateIndex createIndex, S context) {
-          Table table = createIndex.getTable();
-          String originalName = table.getFullyQualifiedName();
-          if (tables.containsKey(originalName)) {
-            table.setSchemaName(sessionId);
-          }
-
-          return super.visit(createIndex, context);
-        }
-
-        @Override
-        public <S> StringBuilder visit(CreateTable createTable, S context) {
-          Table table = createTable.getTable();
-          String originalName = table.getFullyQualifiedName();
-          tables.put(originalName, table.withSchemaName(sessionId));
-
+        public <S> Void visit(CreateTable createTable, S context) {
+          if (createTable.getTable().accept(modifyingTableVisitor, null)) {
+            // check if table does not exist yet existing schema
+          };
           return super.visit(createTable, context);
         }
 
         @Override
-        public <S> StringBuilder visit(CreateView createView, S context) {
-          Table table = createView.getView();
-          String originalName = table.getFullyQualifiedName();
-          tables.put(originalName, table.withSchemaName(sessionId));
-
-          return super.visit(createView, context);
-        }
-
-        @Override
-        public <S> StringBuilder visit(RefreshMaterializedViewStatement materializedViewStatement,
-            S context) {
-          Table table = materializedViewStatement.getView();
-          if (tables.containsKey(table.getFullyQualifiedName())) {
-            table.setSchemaName(sessionId);
-          }
-
-          return super.visit(materializedViewStatement, context);
-        }
-
-        @Override
-        public <S> StringBuilder visit(AlterView alterView, S context) {
-          Table table = alterView.getView();
-          if (tables.containsKey(table.getFullyQualifiedName())) {
-            alterView.setView(tables.get(table.getFullyQualifiedName()));
-          }
-
-          return super.visit(alterView, context);
-        }
-
-        @Override
-        public <S> StringBuilder visit(Delete delete, S context) {
-          Table table = delete.getTable();
-          if (tables.containsKey(table.getFullyQualifiedName())) {
-            delete.setTable(tables.get(table.getFullyQualifiedName()));
-          }
+        public <S> Void visit(Delete delete, S context) {
+          modifyingTableVisitor.visitFromItem(delete.getTable(), null);
 
           return super.visit(delete, context);
         }
 
         @Override
-        public <S> StringBuilder visit(Drop drop, S context) {
-          Table table = drop.getName();
-          if (tables.containsKey(table.getFullyQualifiedName())) {
-            drop.setName(tables.get(table.getFullyQualifiedName()));
+        public <S> Void visit(Update update, S context) {
+          modifyingTableVisitor.visitFromItem(update.getTable(), null);
+
+          return super.visit(update, context);
+        }
+
+        @Override
+        public <S> Void visit(Insert insert, S context) {
+          modifyingTableVisitor.visitFromItem(insert.getTable(), null);
+
+          return super.visit(insert, context);
+        }
+
+        @Override
+        public <S> Void visit(Drop drop, S context) {
+          if (drop.getType().equalsIgnoreCase("table")) {
+            modifyingTableVisitor.visitFromItem(drop.getName(), null);
           }
 
           return super.visit(drop, context);
         }
 
         @Override
-        public <S> StringBuilder visit(Insert insert, S context) {
-          Table table = insert.getTable();
-          if (tables.containsKey(table.getFullyQualifiedName())) {
-            insert.setTable(tables.get(table.getFullyQualifiedName()));
-          }
-
-          return super.visit(insert, context);
-        }
-
-
-        @Override
-        public <S> StringBuilder visit(Truncate truncate, S context) {
-          Table table = truncate.getTable();
-          if (tables.containsKey(table.getFullyQualifiedName())) {
-            truncate.setTable(tables.get(table.getFullyQualifiedName()));
-          } else {
-            // @todo: create table in schema
-          }
+        public <S> Void visit(Truncate truncate, S context) {
+          modifyingTableVisitor.visitFromItem(truncate.getTable(), null);
 
           return super.visit(truncate, context);
         }
 
         @Override
-        public <S> StringBuilder visit(Update update, S context) {
-          Table table = update.getTable();
-          if (tables.containsKey(table.getFullyQualifiedName())) {
-            update.setTable(tables.get(table.getFullyQualifiedName()));
-          } else {
-            // @todo: create table in schema
-          }
+        public <S> Void visit(Merge merge, S context) {
+          modifyingTableVisitor.visitFromItem(merge.getTable(), null);
 
-          return super.visit(update, context);
-        }
-
-        @Override
-        public <S> StringBuilder visit(Alter alter, S context) {
-          AlterDeParser alterDeParser = new AlterDeParser(builder);
-          alterDeParser.deParse(alter);
-          return builder;
-        }
-
-
-        @SuppressWarnings({"PMD.CyclomaticComplexity"})
-        @Override
-        public <S> StringBuilder visit(Merge merge, S context) {
-          Table table = merge.getTable();
-
-          if (tables.containsKey(table.getFullyQualifiedName())) {
-            merge.setTable(tables.get(table.getFullyQualifiedName()));
-          }
-
-          new MergeDeParser(expressionDeParser, selectDeParser, builder).deParse(merge);
-          return builder;
-        }
-
-        @Override
-        public <S> StringBuilder visit(Upsert upsert, S context) {
-          UpsertDeParser upsertDeParser =
-              new UpsertDeParser(expressionDeParser, selectDeParser, builder);
-          upsertDeParser.deParse(upsert);
-          return builder;
-        }
-
-
-        // @Override
-        // public <S> StringBuilder visit(AlterSequence alterSequence, S context) {
-        // new AlterSequenceDeParser(builder).deParse(alterSequence);
-        // return builder;
-        // }
-
-
-        // @Override
-        // public <S> StringBuilder visit(CreateSynonym createSynonym, S context) {
-        // new CreateSynonymDeparser(builder).deParse(createSynonym);
-        // return builder;
-        // }
-
-        @Override
-        public <S> StringBuilder visit(RenameTableStatement renameTableStatement, S context) {
-          renameTableStatement.appendTo(builder);
-          return builder;
+          return super.visit(merge, context);
         }
       };
 
 
-  public StarlakeSession(Connection conn, String id) throws SQLException {
+  public StarlakeSession(StarlakeConnection conn, String id) throws SQLException {
     try (java.sql.Statement statement = conn.createStatement()) {
       statement.executeUpdate("CREATE SCHEMA " + id);
     }
@@ -229,8 +136,6 @@ public class StarlakeSession {
     this.sessionId = id;
     this.status = Status.STARTED;
     this.startInstant = Instant.now();
-
-    selectDeParser.setExpressionVisitor(expressionDeParser);
   }
 
   public static String generateUniqueID() {
@@ -246,7 +151,7 @@ public class StarlakeSession {
     return sb.reverse().toString();
   }
 
-  public StarlakeSession(Connection conn) throws SQLException {
+  public StarlakeSession(StarlakeConnection conn) throws SQLException {
     this(conn, generateUniqueID());
   }
 
@@ -255,7 +160,7 @@ public class StarlakeSession {
     this.endInstant = Instant.now();
 
     try (java.sql.Statement statement = conn.createStatement()) {
-      for (Table t : tables.values()) {
+      for (Table t : replacementTables.values()) {
         statement.executeUpdate("DROP TABLE " + t.getFullyQualifiedName());
       }
       statement.executeUpdate("DROP SCHEMA " + sessionId);
@@ -276,7 +181,7 @@ public class StarlakeSession {
           LOGGER.log(Level.SEVERE, "Failed apply statement from session:\n" + sqlStr, ex);
         }
       }
-      for (Table t : tables.values()) {
+      for (Table t : replacementTables.values()) {
         statement.executeUpdate("DROP TABLE " + t.getFullyQualifiedName());
       }
       statement.executeUpdate("DROP SCHEMA " + sessionId);
@@ -285,11 +190,19 @@ public class StarlakeSession {
     }
   }
 
-  public String rewriteSql(net.sf.jsqlparser.statement.Statement st, String sqlStr) {
+  public String rewriteSql(net.sf.jsqlparser.statement.Statement st, String sqlStr) throws SQLException {
+    LOGGER.info("Rewrite:\n" + sqlStr);
     if (status == Status.STARTED) {
       statements.put(Instant.now(), sqlStr);
-      final StringBuilder builder = st.accept(statementDeParser, null);
-      return builder.toString();
+
+      // maintain the replacement tables
+      st.accept(statementVisitor, null);
+
+      // rewrite the queries using the replacement tables
+      JSQLReplacer replacer = new JSQLReplacer(conn.wrapped);
+      final Statement replace = replacer.replace(st, replacementTables);
+
+      return replace.toString();
     } else {
       return sqlStr;
     }
@@ -321,8 +234,8 @@ public class StarlakeSession {
     return this;
   }
 
-  public CaseInsensitiveLinkedHashMap<Table> getTables() {
-    return tables;
+  public CaseInsensitiveLinkedHashMap<Table> getReplacementTables() {
+    return replacementTables;
   }
 
   public TreeMap<Instant, String> getStatements() {

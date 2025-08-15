@@ -51,7 +51,9 @@ public class SnowFlakeTest {
   void testSelect() throws SQLException {
     String sqlStr = "SELECT * FROM customer;";
     try (Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sqlStr)) {
-      Assertions.assertThat(rs.next()).isTrue();
+      if (!rs.next()) {
+        Assertions.fail("No records returned;");
+      }
     }
   }
 }

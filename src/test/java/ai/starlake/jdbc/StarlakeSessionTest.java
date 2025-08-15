@@ -99,8 +99,11 @@ public class StarlakeSessionTest {
 
       // query this table using the rewrite
       try (ResultSet rs = st.executeQuery("SELECT * FROM public.a")) {
-        Assertions.assertTrue(rs.next());
-        Assertions.assertEquals("1", rs.getString(1));
+        if (rs.next()) {
+          Assertions.assertEquals("1", rs.getString(1));
+        } else {
+          Assertions.fail("No records returned.");
+        }
       }
 
       // Apply the session by creating the table in schema "PUBLIC"

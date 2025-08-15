@@ -41,20 +41,21 @@ public class StarlakeStatement implements Statement {
     try {
       // @todo: avoid double parsing and unpipe into Statement instead of String
       String unpipedSql = sql;
-              JSQLTranspiler.unpipe(sql, connection.executor, p -> {
+      JSQLTranspiler.unpipe(sql, connection.executor, p -> {
       });
 
       final net.sf.jsqlparser.statement.Statement st =
-          CCJSqlParserUtil.parse(unpipedSql, connection.executor, parser -> {});
+          CCJSqlParserUtil.parse(unpipedSql, connection.executor, parser -> {
+          });
 
       if (st instanceof SessionStatement) {
         return connection.executeQuery((SessionStatement) st);
       } else {
         if (connection.currentSession != null) {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
-          return wrapped.executeQuery(rewrittenSql);
+          return new StarlakeResultSet(this, wrapped.executeQuery(rewrittenSql));
         } else {
-          return wrapped.executeQuery(unpipedSql);
+          return new StarlakeResultSet(this, wrapped.executeQuery(unpipedSql));
         }
       }
     } catch (JSQLParserException e) {
@@ -70,8 +71,8 @@ public class StarlakeStatement implements Statement {
       });
 
       final net.sf.jsqlparser.statement.Statement st =
-              CCJSqlParserUtil.parse(unpipedSql, connection.executor, p -> {
-              });
+          CCJSqlParserUtil.parse(unpipedSql, connection.executor, p -> {
+          });
 
       if (st instanceof SessionStatement) {
         connection.execute((SessionStatement) st);

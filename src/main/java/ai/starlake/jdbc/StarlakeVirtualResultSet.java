@@ -82,7 +82,7 @@ public class StarlakeVirtualResultSet implements ResultSet {
     }
 
     Object value = values[currentRow][columnIndex - 1];
-    wasNull = (value == null);
+    wasNull = value == null;
     return value;
   }
 
@@ -210,120 +210,144 @@ public class StarlakeVirtualResultSet implements ResultSet {
   @Override
   public boolean getBoolean(int columnIndex) throws SQLException {
     Object value = getValue(columnIndex);
-    if (value == null)
+    if (value == null) {
       return false;
-    if (value instanceof Boolean)
+    }
+    if (value instanceof Boolean) {
       return (Boolean) value;
-    if (value instanceof Number)
+    }
+    if (value instanceof Number) {
       return ((Number) value).intValue() != 0;
+    }
     return Boolean.parseBoolean(value.toString());
   }
 
   @Override
   public byte getByte(int columnIndex) throws SQLException {
     Object value = getValue(columnIndex);
-    if (value == null)
+    if (value == null) {
       return 0;
-    if (value instanceof Number)
+    }
+    if (value instanceof Number) {
       return ((Number) value).byteValue();
+    }
     return Byte.parseByte(value.toString());
   }
 
   @Override
   public short getShort(int columnIndex) throws SQLException {
     Object value = getValue(columnIndex);
-    if (value == null)
+    if (value == null) {
       return 0;
-    if (value instanceof Number)
+    }
+    if (value instanceof Number) {
       return ((Number) value).shortValue();
+    }
     return Short.parseShort(value.toString());
   }
 
   @Override
   public int getInt(int columnIndex) throws SQLException {
     Object value = getValue(columnIndex);
-    if (value == null)
+    if (value == null) {
       return 0;
-    if (value instanceof Number)
+    }
+    if (value instanceof Number) {
       return ((Number) value).intValue();
+    }
     return Integer.parseInt(value.toString());
   }
 
   @Override
   public long getLong(int columnIndex) throws SQLException {
     Object value = getValue(columnIndex);
-    if (value == null)
+    if (value == null) {
       return 0;
-    if (value instanceof Number)
+    }
+    if (value instanceof Number) {
       return ((Number) value).longValue();
+    }
     return Long.parseLong(value.toString());
   }
 
   @Override
   public float getFloat(int columnIndex) throws SQLException {
     Object value = getValue(columnIndex);
-    if (value == null)
+    if (value == null) {
       return 0;
-    if (value instanceof Number)
+    }
+    if (value instanceof Number) {
       return ((Number) value).floatValue();
+    }
     return Float.parseFloat(value.toString());
   }
 
   @Override
   public double getDouble(int columnIndex) throws SQLException {
     Object value = getValue(columnIndex);
-    if (value == null)
+    if (value == null) {
       return 0;
-    if (value instanceof Number)
+    }
+    if (value instanceof Number) {
       return ((Number) value).doubleValue();
+    }
     return Double.parseDouble(value.toString());
   }
 
   @Override
   public BigDecimal getBigDecimal(int columnIndex) throws SQLException {
     Object value = getValue(columnIndex);
-    if (value == null)
+    if (value == null) {
       return null;
-    if (value instanceof BigDecimal)
+    }
+    if (value instanceof BigDecimal) {
       return (BigDecimal) value;
-    if (value instanceof Number)
-      return new BigDecimal(value.toString());
+    }
     return new BigDecimal(value.toString());
   }
 
   @Override
   public Date getDate(int columnIndex) throws SQLException {
     Object value = getValue(columnIndex);
-    if (value == null)
+    if (value == null) {
       return null;
-    if (value instanceof Date)
+    }
+    if (value instanceof Date) {
       return (Date) value;
-    if (value instanceof java.util.Date)
+    }
+    if (value instanceof java.util.Date) {
       return new Date(((java.util.Date) value).getTime());
+    }
     return Date.valueOf(value.toString());
   }
 
   @Override
   public Time getTime(int columnIndex) throws SQLException {
     Object value = getValue(columnIndex);
-    if (value == null)
+    if (value == null) {
       return null;
-    if (value instanceof Time)
+    }
+    if (value instanceof Time) {
       return (Time) value;
-    if (value instanceof java.util.Date)
+    }
+    if (value instanceof java.util.Date) {
       return new Time(((java.util.Date) value).getTime());
+    }
     return Time.valueOf(value.toString());
   }
 
   @Override
   public Timestamp getTimestamp(int columnIndex) throws SQLException {
     Object value = getValue(columnIndex);
-    if (value == null)
+    if (value == null) {
       return null;
-    if (value instanceof Timestamp)
+    }
+    if (value instanceof Timestamp) {
       return (Timestamp) value;
-    if (value instanceof java.util.Date)
+    }
+    if (value instanceof java.util.Date) {
       return new Timestamp(((java.util.Date) value).getTime());
+    }
     return Timestamp.valueOf(value.toString());
   }
 
@@ -431,26 +455,36 @@ public class StarlakeVirtualResultSet implements ResultSet {
       }
 
       Class<?> clazz = columnClasses[column - 1];
-      if (clazz == String.class)
+      if (clazz == String.class) {
         return Types.VARCHAR;
-      if (clazz == Integer.class || clazz == int.class)
+      }
+      if (clazz == Integer.class || clazz == int.class) {
         return Types.INTEGER;
-      if (clazz == Long.class || clazz == long.class)
+      }
+      if (clazz == Long.class || clazz == long.class) {
         return Types.BIGINT;
-      if (clazz == Double.class || clazz == double.class)
+      }
+      if (clazz == Double.class || clazz == double.class) {
         return Types.DOUBLE;
-      if (clazz == Float.class || clazz == float.class)
+      }
+      if (clazz == Float.class || clazz == float.class) {
         return Types.FLOAT;
-      if (clazz == Boolean.class || clazz == boolean.class)
+      }
+      if (clazz == Boolean.class || clazz == boolean.class) {
         return Types.BOOLEAN;
-      if (clazz == Date.class)
+      }
+      if (clazz == Date.class) {
         return Types.DATE;
-      if (clazz == Time.class)
+      }
+      if (clazz == Time.class) {
         return Types.TIME;
-      if (clazz == Timestamp.class)
+      }
+      if (clazz == Timestamp.class) {
         return Types.TIMESTAMP;
-      if (clazz == BigDecimal.class)
+      }
+      if (clazz == BigDecimal.class) {
         return Types.DECIMAL;
+      }
       return Types.OTHER;
     }
 

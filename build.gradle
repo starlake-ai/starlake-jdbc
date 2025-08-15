@@ -65,6 +65,7 @@ dependencies {
     // some JDBC Drivers
     testImplementation 'com.h2database:h2:+'
     testImplementation 'org.duckdb:duckdb_jdbc:1.3.+'
+    testImplementation 'net.snowflake:snowflake-jdbc:+'
 
     // Java Doc in XML Format
     xmlDoclet 'com.manticore-projects.tools:xml-doclet:+'
@@ -225,6 +226,14 @@ test {
     jacoco {
         excludes = ['net/sf/jsqlparser/parser/CCJSqlParserTokenManager']
     }
+
+    // Snowflake access details, to be defined in local `gradle.properties`
+    environment "SNOWFLAKE_USER", project.findProperty("SNOWFLAKE_USER")
+    environment "SNOWFLAKE_PASSWORD", project.findProperty("SNOWFLAKE_PASSWORD")
+    environment "SNOWFLAKE_ACCOUNT", project.findProperty("SNOWFLAKE_ACCOUNT")
+    environment "SNOWFLAKE_WAREHOUSE", project.findProperty("SNOWFLAKE_WAREHOUSE")
+    environment "SNOWFLAKE_DATABASE", project.findProperty("SNOWFLAKE_DATABASE")
+    environment "SNOWFLAKE_SCHEMA", project.findProperty("SNOWFLAKE_SCHEMA")
 }
 
 license {

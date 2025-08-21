@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -15,7 +14,7 @@ import java.sql.Statement;
 import java.util.Properties;
 
 public class StarlakeSessionTest {
-  Connection conn;
+  StarlakeConnection conn;
 
   @BeforeEach
   void createDatabase() throws SQLException, ClassNotFoundException {
@@ -28,9 +27,10 @@ public class StarlakeSessionTest {
     info.put("username", "SA");
     info.put("password", "");
 
-    conn = driver.connect("jdbc:starlake:h2:mem:", info);
+    conn = (StarlakeConnection) driver.connect("jdbc:starlake:h2:mem:", info);
     try (Statement st = conn.createStatement()) {
       st.executeUpdate("CREATE SCHEMA IF NOT EXISTS test;");
+      st.executeUpdate("CREATE TABLE IF NOT EXISTS test.b (c VARCHAR(40));");
     }
   }
 
@@ -148,6 +148,98 @@ public class StarlakeSessionTest {
       // Confirm session status
       Assertions.assertEquals(Status.DROPPED,
           ((StarlakeConnection) conn).currentSession.getStatus());
+    }
+  }
+
+  @Test
+  void modifyApplyExistingTable() throws SQLException {
+    // Define a session ID
+    final String sessionId = "session1";
+    try (Statement st = conn.createStatement()) {
+      // Start a session
+      st.execute("SESSION START " + sessionId);
+
+      // Insert a value into the existing but empty table
+      st.executeUpdate("INSERT INTO test.b VALUES('test');");
+
+      // This should create a new session table
+      assertThatH2SessionTableExists(sessionId, "b");
+
+      // Leaving the original table untouched and empty
+      assertThatH2SchemaTableTableIsEmpty("test", "b");
+
+      // while we can still query and use the new record
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test.b")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test", rs.getString(1));
+        }
+      }
+
+      // Apply the session and all its changes to the original table
+      st.execute("SESSION APPLY session1;");
+      assertThatH2SessionNotExists(sessionId);
+
+      // Confirm session status
+      Assertions.assertEquals(Status.APPLIED,
+          ((StarlakeConnection) conn).currentSession.getStatus());
+
+      // after applying, the original table should hold the record
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test.b")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test", rs.getString(1));
+        }
+      }
+    }
+  }
+
+  @Test
+  void modifyDropExistingTable() throws SQLException {
+    // Define a session ID
+    final String sessionId = "session1";
+    try (Statement st = conn.createStatement()) {
+      // Start a session
+      st.execute("SESSION START " + sessionId);
+
+      // Insert a value into the existing but empty table
+      st.executeUpdate("INSERT INTO test.b VALUES('test');");
+
+      // This should create a new session table
+      assertThatH2SessionTableExists(sessionId, "b");
+
+      // Leaving the original table untouched and empty
+      assertThatH2SchemaTableTableIsEmpty("test", "b");
+
+      // while we can still query and use the new record
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test.b")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test", rs.getString(1));
+        }
+      }
+
+      // Drop the session and discard all changes
+      st.execute("SESSION DROP session1;");
+      assertThatH2SessionNotExists(sessionId);
+
+      // Confirm session status
+      Assertions.assertEquals(Status.DROPPED,
+          ((StarlakeConnection) conn).currentSession.getStatus());
+
+      // after dropping the original table still should be empty
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test.b")) {
+        if (rs.next()) {
+          Assertions.fail("Table is not empty.");
+        }
+      }
+    }
+  }
+
+  private void assertThatH2SchemaTableTableIsEmpty(String schemaName, String tableName)
+      throws SQLException {
+    try (Statement st = conn.wrapped.createStatement();
+        ResultSet rs = st.executeQuery("SELECT * from " + schemaName + "." + tableName)) {
+      if (rs.next()) {
+        Assertions.fail("Table " + schemaName + "." + tableName + " is not empty.");
+      }
     }
   }
 }

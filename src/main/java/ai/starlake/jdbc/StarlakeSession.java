@@ -8,6 +8,8 @@ import net.sf.jsqlparser.expression.ExpressionVisitorAdapter;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.StatementVisitorAdapter;
+import net.sf.jsqlparser.statement.alter.Alter;
+import net.sf.jsqlparser.statement.create.index.CreateIndex;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
 import net.sf.jsqlparser.statement.delete.Delete;
 import net.sf.jsqlparser.statement.drop.Drop;
@@ -70,8 +72,20 @@ public class StarlakeSession {
         public <S> Boolean visit(Table table, S context) {
           String originalName = table.getFullyQualifiedName();
           if (!replacementTables.containsKey(originalName)) {
-            replacementTables.put(originalName,
-                new Table(table.withSchemaName(sessionId).getFullyQualifiedName()));
+            Table replacementTable =
+                new Table(table.withSchemaName(sessionId).getFullyQualifiedName());
+
+            if (!(context instanceof CreateTable)) {
+              // create table as select
+              try (java.sql.Statement st = conn.wrapped.createStatement()) {
+                st.executeUpdate("CREATE TABLE " + replacementTable.getFullyQualifiedName()
+                    + " AS SELECT * FROM " + originalName);
+              } catch (Exception ex) {
+                throw new RuntimeException("Failed to create a copy of " + originalName, ex);
+              }
+            }
+
+            replacementTables.put(originalName, replacementTable);
             return true;
           } else {
             return false;
@@ -82,28 +96,34 @@ public class StarlakeSession {
   private final StatementVisitorAdapter<Void> statementVisitor = new StatementVisitorAdapter<>() {
     @Override
     public <S> Void visit(CreateTable createTable, S context) {
-      createTable.getTable().accept(modifyingTableVisitor, null);
+      createTable.getTable().accept(modifyingTableVisitor, context);
       // check if table does not exist yet existing schema
       return super.visit(createTable, context);
     }
 
+    public <S> Void visit(CreateIndex index, S context) {
+      modifyingTableVisitor.visitFromItem(index.getTable(), context);
+
+      return super.visit(index, context);
+    }
+
     @Override
     public <S> Void visit(Delete delete, S context) {
-      modifyingTableVisitor.visitFromItem(delete.getTable(), null);
+      modifyingTableVisitor.visitFromItem(delete.getTable(), context);
 
       return super.visit(delete, context);
     }
 
     @Override
     public <S> Void visit(Update update, S context) {
-      modifyingTableVisitor.visitFromItem(update.getTable(), null);
+      modifyingTableVisitor.visitFromItem(update.getTable(), context);
 
       return super.visit(update, context);
     }
 
     @Override
     public <S> Void visit(Insert insert, S context) {
-      modifyingTableVisitor.visitFromItem(insert.getTable(), null);
+      modifyingTableVisitor.visitFromItem(insert.getTable(), context);
 
       return super.visit(insert, context);
     }
@@ -111,7 +131,7 @@ public class StarlakeSession {
     @Override
     public <S> Void visit(Drop drop, S context) {
       if (drop.getType().equalsIgnoreCase("table")) {
-        modifyingTableVisitor.visitFromItem(drop.getName(), null);
+        modifyingTableVisitor.visitFromItem(drop.getName(), context);
       }
 
       return super.visit(drop, context);
@@ -119,16 +139,23 @@ public class StarlakeSession {
 
     @Override
     public <S> Void visit(Truncate truncate, S context) {
-      modifyingTableVisitor.visitFromItem(truncate.getTable(), null);
+      modifyingTableVisitor.visitFromItem(truncate.getTable(), context);
 
       return super.visit(truncate, context);
     }
 
     @Override
     public <S> Void visit(Merge merge, S context) {
-      modifyingTableVisitor.visitFromItem(merge.getTable(), null);
+      modifyingTableVisitor.visitFromItem(merge.getTable(), context);
 
       return super.visit(merge, context);
+    }
+
+    @Override
+    public <S> Void visit(Alter alter, S context) {
+      modifyingTableVisitor.visitFromItem(alter.getTable(), context);
+
+      return super.visit(alter, context);
     }
   };
 
@@ -201,7 +228,7 @@ public class StarlakeSession {
       statements.put(Instant.now(), sqlStr);
 
       // maintain the replacement tables
-      st.accept(statementVisitor, null);
+      st.accept(statementVisitor, st);
 
       // rewrite the queries using the replacement tables
       JdbcMetaData metaData = new JdbcMetaData(conn.wrapped);

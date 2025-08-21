@@ -27,12 +27,12 @@ Run and test all your DDL/DML statements in a sandboxed session before applying 
 SESSION START session1;
 
 -- create a new table w/o touching production
--- after execution, `sessiCREATE TABLEon1.a` will exist, but not `public.a`
+-- after execution, `session1.a` will exist, but not `public.a`
 CREATE TABLE a (test VARCHAR(40));
 
 -- populate the new table with data
 INSERT INTO a VALUES ('test1');
-INSERT INTO a VALUES ('test2');staging
+INSERT INTO a VALUES ('test2');
 INSERT INTO a VALUES ('test3');
 
 -- select from the new table, returns 3
@@ -56,7 +56,7 @@ INSERT INTO a VALUES ('test2');
 -- start a new session that will hold all modifications
 SESSION START session1;
 
--- populate the new table with data w/o touching production
+-- populate the new table with data w/o touching productionadd more test cases
 -- after execution `session.a` will hold 3 records while `public.a` still holds 2 records
 INSERT INTO a VALUES ('test3');
 
@@ -91,13 +91,13 @@ SESSION START session1;
 -- after execution `session.b` will be empty, while `public.b` holds 3 records;
 DELETE FROM b;
 
--- joining the tables will won't return any records;
+-- joining the tables will return count=0
 SELECT Count(*) FROM a INNER JOIN b USING(test);
 
 -- drop the session (reversing the deletion from `b`)
 SESSION DROP;
 
--- joining the tables will return 3 records
+-- joining the tables will return count=3
 SELECT Count(*) FROM a INNER JOIN b USING(test);
 ```
 

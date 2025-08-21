@@ -9,8 +9,13 @@ import org.junit.jupiter.api.Test;
 import java.sql.Driver;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 public class StarlakeSessionTest {
@@ -37,6 +42,30 @@ public class StarlakeSessionTest {
   @AfterEach
   void closeDatabase() throws SQLException {
     conn.close();
+  }
+
+  public static List<Map<String, Object>> toRowMaps(ResultSet rs) throws SQLException {
+    List<Map<String, Object>> rows = new ArrayList<>();
+    ResultSetMetaData meta = rs.getMetaData();
+    int colCount = meta.getColumnCount();
+
+    while (rs.next()) {
+      Map<String, Object> row = new LinkedHashMap<>();
+      for (int i = 1; i <= colCount; i++) {
+        String colName = meta.getColumnLabel(i); // column alias or name
+        row.put(colName, rs.getObject(i));
+      }
+      rows.add(row);
+    }
+    return rows;
+  }
+
+  void assertRecordsetIsEqual(ResultSet rs1, ResultSet rs2) throws Exception {
+    List<Map<String, Object>> list1 = toRowMaps(rs1);
+    List<Map<String, Object>> list2 = toRowMaps(rs2);
+
+    org.assertj.core.api.Assertions.assertThat(list1).usingRecursiveFieldByFieldElementComparator()
+        .containsExactlyInAnyOrderElementsOf(list2);
   }
 
   private boolean checkH2TableExists(String schema, String tableName) throws SQLException {
@@ -74,6 +103,15 @@ public class StarlakeSessionTest {
     Assertions.assertFalse(checkH2TableExists(schema.toUpperCase(), tableName.toUpperCase()));
   }
 
+  private void assertThatH2SchemaTableTableIsEmpty(String schemaName, String tableName)
+      throws SQLException {
+    try (Statement st = conn.wrapped.createStatement();
+        ResultSet rs = st.executeQuery("SELECT * from " + schemaName + "." + tableName)) {
+      if (rs.next()) {
+        Assertions.fail("Table " + schemaName + "." + tableName + " is not empty.");
+      }
+    }
+  }
 
   @Test
   void testApplySession() throws ClassNotFoundException, SQLException {
@@ -233,12 +271,95 @@ public class StarlakeSessionTest {
     }
   }
 
-  private void assertThatH2SchemaTableTableIsEmpty(String schemaName, String tableName)
-      throws SQLException {
-    try (Statement st = conn.wrapped.createStatement();
-        ResultSet rs = st.executeQuery("SELECT * from " + schemaName + "." + tableName)) {
-      if (rs.next()) {
-        Assertions.fail("Table " + schemaName + "." + tableName + " is not empty.");
+  @Test
+  void testCreateInsert() throws SQLException {
+    // Define a session ID
+    final String sessionId = "session1";
+    try (Statement st = conn.createStatement()) {
+      // Start a session
+      st.execute("SESSION START " + sessionId);
+
+      // create table and insert values
+      st.executeUpdate("CREATE TABLE a (test VARCHAR(40));");
+      st.executeUpdate("INSERT INTO a VALUES ('test1');");
+      st.executeUpdate("INSERT INTO a VALUES ('test2');");
+      st.executeUpdate("INSERT INTO a VALUES ('test3');");
+
+      // This should create a new session table
+      assertThatH2SessionTableExists(sessionId, "a");
+
+      // Leaving the original table untouched and empty
+      assertThatH2SchemaTableNotExists("public", "a");
+
+      // while we can still query and use the new record
+      try (ResultSet rs = st.executeQuery("SELECT count(*) FROM a")) {
+        if (rs.next()) {
+          Assertions.assertEquals(3, rs.getInt(1));
+        }
+      }
+
+      // Drop the session and discard all changes
+      st.execute("SESSION APPLY;");
+      assertThatH2SessionNotExists(sessionId);
+
+      // after dropping the original table still should be empty
+      try (ResultSet rs = st.executeQuery("SELECT count(*) FROM a")) {
+        if (rs.next()) {
+          Assertions.assertEquals(3, rs.getInt(1));
+        }
+      }
+    }
+  }
+
+  @Test
+  void testJoinModifiedTable() throws SQLException {
+    // Define a session ID
+    final String sessionId = "session1";
+    try (Statement st = conn.createStatement()) {
+      // create table and insert values
+      st.executeUpdate("CREATE TABLE a (test VARCHAR(40));");
+      st.executeUpdate("INSERT INTO a VALUES ('test1');");
+      st.executeUpdate("INSERT INTO a VALUES ('test2');");
+      st.executeUpdate("INSERT INTO a VALUES ('test3');");
+      assertThatH2SchemaTableExists("public", "a");
+
+      // create table and insert values
+      st.executeUpdate("CREATE TABLE b (test VARCHAR(40));");
+      st.executeUpdate("INSERT INTO b VALUES ('test1');");
+      st.executeUpdate("INSERT INTO b VALUES ('test2');");
+      st.executeUpdate("INSERT INTO b VALUES ('test3');");
+      assertThatH2SchemaTableExists("public", "b");
+
+
+      // Start a sessionSESSION
+      st.execute("BRANCH START " + sessionId);
+
+      // This should create a new session table
+      st.executeUpdate("DELETE FROM b;");
+
+      // Leaving the original table, but removing records from session table only
+      assertThatH2SessionTableExists(sessionId, "b");
+
+      // joining the session table will return 0
+      try (ResultSet rs = st.executeQuery("SELECT Count(*) FROM a INNER JOIN b USING(test);")) {
+        if (rs.next()) {
+          Assertions.assertEquals(0, rs.getInt(1));
+        } else {
+          Assertions.fail("No records returned.");
+        }
+      }
+
+      // Drop the session and discard all changes
+      st.execute("BRANCH DROP;");
+      assertThatH2SessionNotExists(sessionId);
+
+      // after dropping the changes, we expect the join to work
+      try (ResultSet rs = st.executeQuery("SELECT Count(*) FROM a INNER JOIN b USING(test);")) {
+        if (rs.next()) {
+          Assertions.assertEquals(3, rs.getInt(1));
+        } else {
+          Assertions.fail("No records returned.");
+        }
       }
     }
   }

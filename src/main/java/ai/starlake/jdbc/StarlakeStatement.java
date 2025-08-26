@@ -19,7 +19,9 @@ package ai.starlake.jdbc;
 import ai.starlake.transpiler.JSQLTranspiler;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
+import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.SessionStatement;
+import net.sf.jsqlparser.statement.create.table.CreateTable;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -80,7 +82,19 @@ public class StarlakeStatement implements Statement {
       } else {
         if (connection.currentSession != null) {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
-          return wrapped.executeUpdate(rewrittenSql);
+          int i = wrapped.executeUpdate(rewrittenSql);
+
+          // update the meta data when tables have been changed
+          if (st instanceof CreateTable) {
+            Table t = ((CreateTable) st).getTable();
+            try {
+              connection.currentSession.metaData.updateTable(connection.wrapped, t);
+            } catch (SQLException e) {
+              throw new RuntimeException(e);
+            }
+          }
+          return i;
+
         } else {
           return wrapped.executeUpdate(unpipedSql);
         }

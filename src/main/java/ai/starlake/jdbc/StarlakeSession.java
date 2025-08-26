@@ -25,6 +25,7 @@ import net.sf.jsqlparser.statement.update.Update;
 import java.math.BigInteger;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -36,6 +37,9 @@ public class StarlakeSession {
       "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
   public final static Logger LOGGER = Logger.getLogger(StarlakeSession.class.getName());
+
+  // rewrite the queries using the replacement tables
+  JdbcMetaData metaData;
 
   public enum Status {
     STARTED, APPLIED, DROPPED
@@ -78,11 +82,20 @@ public class StarlakeSession {
             if (!(context instanceof CreateTable)) {
               // create table as select
               try (java.sql.Statement st = conn.wrapped.createStatement()) {
-                st.executeUpdate("CREATE TABLE " + replacementTable.getFullyQualifiedName()
-                    + " AS SELECT * FROM " + originalName);
+                if (conn.wrapped.getMetaData().getDriverName().toLowerCase()
+                    .contains("jdbc:snowflake")) {
+                  LOGGER.info("Using `CLONE` on SnowFlake");
+                  st.executeUpdate("CREATE TABLE " + replacementTable.getFullyQualifiedName()
+                      + " CLONE " + originalName);
+                } else {
+                  st.executeUpdate("CREATE TABLE " + replacementTable.getFullyQualifiedName()
+                      + " AS SELECT * FROM " + originalName);
+                }
+                metaData.updateTable(conn, replacementTable);
               } catch (Exception ex) {
                 throw new RuntimeException("Failed to create a copy of " + originalName, ex);
               }
+
             }
 
             replacementTables.put(originalName, replacementTable);
@@ -155,19 +168,66 @@ public class StarlakeSession {
     public <S> Void visit(Alter alter, S context) {
       modifyingTableVisitor.visitFromItem(alter.getTable(), context);
 
-      return super.visit(alter, context);
+      return super.visit(alter, context);// rewrite the queries using the replacement tables
     }
   };
 
+  /**
+   * Extracts the values of "db" and "schema" from a JDBC URL. Both values are optional and may be
+   * null.
+   *
+   * @param jdbcUrl The JDBC connection URL.
+   * @return A map with keys "db" and "schema", values may be null if not present.
+   */
+  public static Map<String, String> connectionProperties(String jdbcUrl) {
+    Map<String, String> result = new HashMap<>();
+    result.put("db", null);
+    result.put("schema", null);
+
+    if (jdbcUrl == null || !jdbcUrl.contains("?")) {
+      return result; // no query params at all
+    }
+
+    String queryPart = jdbcUrl.substring(jdbcUrl.indexOf("?") + 1);
+    String[] params = queryPart.split("&");
+
+    for (String param : params) {
+      String[] keyValue = param.split("=", 2);
+      if (keyValue.length == 2) {
+        String key = keyValue[0].toLowerCase();
+        String value = keyValue[1];
+        if ("db".equals(key)) {
+          result.put("db", value);
+        } else if ("schema".equals(key)) {
+          result.put("schema", value);
+        }
+      }
+    }
+
+    return result;
+  }
 
   public StarlakeSession(StarlakeConnection conn, String id) throws SQLException {
+    String currentSchema = conn.getSchema();
+
     try (java.sql.Statement statement = conn.createStatement()) {
       statement.executeUpdate("CREATE SCHEMA " + id);
+
+      try {
+        // Snowflake sets any CREATE SCHEMA as current schema
+        statement.executeUpdate("USE SCHEMA " + currentSchema);
+      } catch (Exception e) {
+        LOGGER.warning("Failed to set current schema.");
+      }
     }
+
+
+
     this.conn = conn;
     this.sessionId = id;
     this.status = Status.STARTED;
     this.startInstant = Instant.now();
+    this.metaData = new JdbcMetaData(conn);
   }
 
   public static String generateUniqueID() {
@@ -229,9 +289,6 @@ public class StarlakeSession {
 
       // maintain the replacement tables
       st.accept(statementVisitor, st);
-
-      // rewrite the queries using the replacement tables
-      JdbcMetaData metaData = new JdbcMetaData(conn.wrapped);
 
       if (st instanceof Insert || st instanceof Update || st instanceof Delete
           || st instanceof Merge || st instanceof Select) {

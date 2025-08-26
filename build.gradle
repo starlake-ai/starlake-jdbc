@@ -234,6 +234,8 @@ test {
     environment "SNOWFLAKE_WAREHOUSE", project.findProperty("SNOWFLAKE_WAREHOUSE")
     environment "SNOWFLAKE_DATABASE", project.findProperty("SNOWFLAKE_DATABASE")
     environment "SNOWFLAKE_SCHEMA", project.findProperty("SNOWFLAKE_SCHEMA")
+
+    jvmArgs '--add-opens=java.base/java.nio=org.apache.arrow.memory.core,ALL-UNNAMED'
 }
 
 license {

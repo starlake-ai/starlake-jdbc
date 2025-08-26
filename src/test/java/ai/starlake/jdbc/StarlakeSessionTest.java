@@ -69,7 +69,7 @@ public class StarlakeSessionTest {
   }
 
   private boolean checkH2TableExists(String schema, String tableName) throws SQLException {
-    try (Statement st = conn.createStatement();
+    try (Statement st = conn.wrapped.createStatement();
         ResultSet rs = st.executeQuery(
             "SELECT table_name\n" + "FROM information_schema.tables\n" + "WHERE table_schema = '"
                 + schema + "'\n" + "    AND table_name = '" + tableName + "'\n" + ";")) {
@@ -78,7 +78,7 @@ public class StarlakeSessionTest {
   }
 
   private boolean checkH2SchemaExists(String schema) throws SQLException {
-    try (Statement st = conn.createStatement();
+    try (Statement st = conn.wrapped.createStatement();
         ResultSet rs = st.executeQuery("SELECT schema_name\n" + "FROM information_schema.schemata\n"
             + "WHERE schema_name = '" + schema + "'\n" + ";")) {
       return rs.next();

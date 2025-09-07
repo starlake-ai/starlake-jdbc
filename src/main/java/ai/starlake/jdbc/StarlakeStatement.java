@@ -84,9 +84,9 @@ public class StarlakeStatement implements Statement {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
           int i = wrapped.executeUpdate(rewrittenSql);
 
-          // update the meta data when tables have been changed
+          // update the metadata when tables have been changed
           if (st instanceof CreateTable) {
-            Table t = ((CreateTable) st).getTable();
+            Table t = new Table(((CreateTable) st).getTable().getFullyQualifiedName());
             try {
               connection.currentSession.metaData.updateTable(connection.wrapped, t);
             } catch (SQLException e) {

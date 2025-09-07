@@ -167,8 +167,8 @@ public class StarlakeSession {
     @Override
     public <S> Void visit(Alter alter, S context) {
       modifyingTableVisitor.visitFromItem(alter.getTable(), context);
-
-      return super.visit(alter, context);// rewrite the queries using the replacement tables
+      // rewrite the queries using the replacement tables
+      return super.visit(alter, context);
     }
   };
 

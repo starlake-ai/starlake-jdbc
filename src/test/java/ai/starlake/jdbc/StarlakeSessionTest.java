@@ -69,9 +69,12 @@ public class StarlakeSessionTest {
         .containsExactlyInAnyOrderElementsOf(list2);
   }
 
-  private boolean checkH2TableExists(String schema, String tableName) throws SQLException {
+  private boolean checkH2TableExists(String schema, String table) throws SQLException {
     String catalogName = null;
     String schemaName = "";
+    String tableName = "";
+
+    // split the schema
     if (MultiPartName.isQuoted(schema) && schema.contains(".")) {
       String[] parts = MultiPartName.unquote(schema).split("\\.");
 
@@ -80,8 +83,6 @@ public class StarlakeSessionTest {
           catalogName = parts[0].trim();
           schemaName = parts[1].trim();
           break;
-        case 1:
-          schemaName = parts[0].trim();
         default:
           throw new RuntimeException("Invalid schema name: " + schema);
       }
@@ -93,13 +94,48 @@ public class StarlakeSessionTest {
           catalogName = parts[0].trim();
           schemaName = parts[1].trim();
           break;
-        case 1:
-          schemaName = parts[0].trim();
         default:
           throw new RuntimeException("Invalid schema name: " + schema);
       }
     } else {
       schemaName = schema;
+    }
+
+    // split the table
+    if (MultiPartName.isQuoted(table) && schema.contains(".")) {
+      String[] parts = MultiPartName.unquote(table).split("\\.");
+
+      switch (parts.length) {
+        case 3:
+          catalogName = parts[0].trim();
+          schemaName = parts[1].trim();
+          tableName = parts[2].trim();
+          break;
+        case 2:
+          schemaName = parts[0].trim();
+          tableName = parts[1].trim();
+          break;
+        default:
+          throw new RuntimeException("Invalid table name: " + table);
+      }
+    } else if (table.contains(".")) {
+      String[] parts = table.split("\\.");
+
+      switch (parts.length) {
+        case 3:
+          catalogName = parts[0].trim();
+          schemaName = parts[1].trim();
+          tableName = parts[2].trim();
+          break;
+        case 2:
+          schemaName = parts[0].trim();
+          tableName = parts[1].trim();
+          break;
+        default:
+          throw new RuntimeException("Invalid table name: " + table);
+      }
+    } else {
+      tableName = table;
     }
 
     try (Statement st = conn.wrapped.createStatement();
@@ -124,8 +160,6 @@ public class StarlakeSessionTest {
           catalogName = parts[0].trim();
           schemaName = parts[1].trim();
           break;
-        case 1:
-          schemaName = parts[0].trim();
         default:
           throw new RuntimeException("Invalid schema name: " + schema);
       }
@@ -137,8 +171,6 @@ public class StarlakeSessionTest {
           catalogName = parts[0].trim();
           schemaName = parts[1].trim();
           break;
-        case 1:
-          schemaName = parts[0].trim();
         default:
           throw new RuntimeException("Invalid schema name: " + schema);
       }
@@ -160,6 +192,10 @@ public class StarlakeSessionTest {
   private void assertThatH2SessionTableExists(String idSession, String tableName)
       throws SQLException {
     Assertions.assertTrue(checkH2TableExists(idSession.toUpperCase(), tableName.toUpperCase()));
+  }
+
+  private void assertThatH2SessionExists(String idSession) throws SQLException {
+    Assertions.assertTrue(checkH2SchemaExists(idSession.toUpperCase()));
   }
 
   private void assertThatH2SessionNotExists(String idSession) throws SQLException {
@@ -186,6 +222,65 @@ public class StarlakeSessionTest {
   }
 
   @Test
+  void testExistingSessionSchema() throws ClassNotFoundException, SQLException {
+    String catalog = conn.getCatalog();
+    final String sessionId = catalog + ".session1";
+
+    // Define a session ID
+
+    try (Statement st = conn.createStatement()) {
+      // is a Starlake Session aware connection
+      Assertions.assertInstanceOf(StarlakeConnection.class, conn);
+
+      // pre-create the schema
+      st.execute("CREATE SCHEMA session1");
+      assertThatH2SessionExists(sessionId);
+
+      // Start a session
+      st.execute("SESSION START " + sessionId + " WITH persist=TRUE");
+      Assertions.assertEquals(Status.STARTED, conn.currentSession.getStatus());
+      Assertions.assertTrue(conn.currentSession.isPersistent());
+      assertThatH2SessionTableExists(sessionId, conn.currentSession.getHistoryTable());
+      assertThatH2SessionTableExists(sessionId, conn.currentSession.getMappingTable());
+
+      // Create a table without touching the current schema "PUBLIC"
+      st.executeUpdate("CREATE TABLE a (b VARCHAR(1)); ");
+
+      Assertions.assertEquals(1,
+          conn.currentSession.metaData.get("UNNAMED").get("session1").get("a").columns.size());
+
+      st.executeUpdate("INSERT INTO a VALUES('1'); ");
+
+      assertThatH2SchemaTableNotExists("public", "a");
+      assertThatH2SessionTableExists(sessionId, "a");
+
+      // query this table using the rewrite
+      try (ResultSet rs = st.executeQuery("SELECT * FROM public.a")) {
+        if (rs.next()) {
+          Assertions.assertEquals("1", rs.getString(1));
+        } else {
+          Assertions.fail("No records returned.");
+        }
+      }
+
+      // Apply the session by creating the table in schema "PUBLIC"
+      // Keep the session objects
+      st.execute("SESSION APPLY " + sessionId + " WITH keep=TRUE");
+
+      assertThatH2SchemaTableExists("public", "a");
+
+      // check that session schema still exists
+      assertThatH2SessionExists(sessionId);
+      assertThatH2SessionTableExists(sessionId, conn.currentSession.getHistoryTable());
+      assertThatH2SessionTableExists(sessionId, conn.currentSession.getMappingTable());
+
+      // Confirm session status
+      Assertions.assertEquals(Status.APPLIED, conn.currentSession.getStatus());
+    }
+  }
+
+
+  @Test
   void testSessionWithCatalog() throws ClassNotFoundException, SQLException {
     String catalog = conn.getCatalog();
     final String sessionId = catalog + ".session1";
@@ -198,9 +293,11 @@ public class StarlakeSessionTest {
       Assertions.assertInstanceOf(StarlakeConnection.class, conn);
 
       // Start a session
-      st.execute("SESSION START " + sessionId);
-      Assertions.assertEquals(Status.STARTED,
-          ((StarlakeConnection) conn).currentSession.getStatus());
+      st.execute("SESSION START " + sessionId + " WITH persist=TRUE");
+      Assertions.assertEquals(Status.STARTED, conn.currentSession.getStatus());
+      Assertions.assertTrue(conn.currentSession.isPersistent());
+      assertThatH2SessionTableExists(sessionId, conn.currentSession.getHistoryTable());
+      assertThatH2SessionTableExists(sessionId, conn.currentSession.getMappingTable());
 
       // Create a table without touching the current schema "PUBLIC"
       st.executeUpdate("CREATE TABLE a (b VARCHAR(1)); ");

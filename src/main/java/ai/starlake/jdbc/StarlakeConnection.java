@@ -383,34 +383,34 @@ public class StarlakeConnection implements Connection {
     switch (st.getAction()) {
       case START:
         if (st.getId() == null) {
-          startSession();
+          startSession(st.getOptions());
         } else {
-          startSession(st.getId());
+          startSession(st.getId(), st.getOptions());
         }
         break;
       case APPLY:
         if (st.getId() == null) {
-          applySession();
+          applySession(st.getOptions());
         } else {
-          applySession(st.getId());
+          applySession(st.getId(), st.getOptions());
         }
         break;
       case DROP:
         if (st.getId() == null) {
-          dropSession();
+          dropSession(st.getOptions());
         } else {
-          dropSession(st.getId());
+          dropSession(st.getId(), st.getOptions());
         }
         break;
       case SHOW:
         if (st.getId() == null) {
-          showSession();
+          showSession(st.getOptions());
         } else {
-          showSession(st.getId());
+          showSession(st.getId(), st.getOptions());
         }
         break;
       case DESCRIBE:
-        describeSession();
+        describeSession(st.getOptions());
         break;
     }
     return false;
@@ -426,73 +426,73 @@ public class StarlakeConnection implements Connection {
     switch (st.getAction()) {
       case START:
         if (st.getId() == null) {
-          startSession();
+          startSession(st.getOptions());
         } else {
-          startSession(st.getId());
+          startSession(st.getId(), st.getOptions());
         }
         return new StarlakeVirtualResultSet("SESSION_COMMAND", getSessionCommand(st));
       case APPLY:
         if (st.getId() == null) {
-          applySession();
+          applySession(st.getOptions());
         } else {
-          applySession(st.getId());
+          applySession(st.getId(), st.getOptions());
         }
         return new StarlakeVirtualResultSet("SESSION_COMMAND", getSessionCommand(st));
       case DROP:
         if (st.getId() == null) {
-          dropSession();
+          dropSession(st.getOptions());
         } else {
-          dropSession(st.getId());
+          dropSession(st.getId(), st.getOptions());
         }
         return new StarlakeVirtualResultSet("SESSION_COMMAND", getSessionCommand(st));
       case SHOW:
         if (st.getId() == null) {
-          showSession();
+          showSession(st.getOptions());
         } else {
-          showSession(st.getId());
+          showSession(st.getId(), st.getOptions());
         }
         return new StarlakeVirtualResultSet("SESSION_COMMAND", getSessionCommand(st));
       case DESCRIBE:
-        describeSession();
+        describeSession(st.getOptions());
         return new StarlakeVirtualResultSet("SESSION_COMMAND", getSessionCommand(st));
       default:
         throw new IllegalStateException("Unexpected value: " + st.getAction());
     }
   }
 
-  public void startSession() throws SQLException {
+  public void startSession(Map<String, String> options) throws SQLException {
     if (currentSession != null && currentSession.getStatus() == Status.STARTED) {
       throw new RuntimeException("Session in progress: " + currentSession.getSessionId());
     } else {
-      currentSession = new StarlakeSession(this);
+      currentSession = new StarlakeSession(this, options);
       sessions.put(currentSession.getSessionId(), currentSession);
       LOGGER.info("Session started: " + currentSession.getSessionId());
     }
   }
 
-  public void startSession(String id) throws SQLException {
+  public void startSession(String id, Map<String, String> options) throws SQLException {
     if (currentSession != null && currentSession.getStatus() == Status.STARTED) {
       throw new RuntimeException("Session in progress: " + currentSession.getSessionId());
     } else {
-      currentSession = new StarlakeSession(this, id);
+      currentSession = new StarlakeSession(this, id, options);
       sessions.put(id, currentSession);
       LOGGER.info("Session started: " + currentSession.getSessionId());
     }
   }
 
-  public void applySession() {
+  public void applySession(Map<String, String> options) {
     if (currentSession == null) {
       throw new RuntimeException("No current Session in progress.");
     } else if (currentSession.getStatus() != Status.STARTED) {
       throw new RuntimeException("Session not in progress: " + currentSession.getSessionId()
           + " -> " + currentSession.getStatus());
     } else {
-      currentSession.apply();
+      currentSession.apply(options);
       LOGGER.info("Session applied: " + currentSession.getSessionId());
     }
   }
 
-  public void applySession(String id) {
+  public void applySession(String id, Map<String, String> options) {
     if (!sessions.containsKey(id)) {
       throw new RuntimeException("Session not found: " + id);
     } else {
@@ -503,24 +503,24 @@ public class StarlakeConnection implements Connection {
       throw new RuntimeException("Session not in progress: " + currentSession.getSessionId()
           + " -> " + currentSession.getStatus());
     } else {
-      currentSession.apply();
+      currentSession.apply(options);
       LOGGER.info("Session applied: " + currentSession.getSessionId());
     }
   }
 
-  public void dropSession() {
+  public void dropSession(Map<String, String> options) {
     if (currentSession == null) {
       throw new RuntimeException("No current Session in progress.");
     } else if (currentSession.getStatus() != Status.STARTED) {
       throw new RuntimeException("No current Session in progress: " + currentSession.getSessionId()
           + " -> " + currentSession.getStatus());
     } else {
-      currentSession.drop();
+      currentSession.drop(options);
       LOGGER.info("Session dropped: " + currentSession.getSessionId());
     }
   }
 
-  public void dropSession(String id) {
+  public void dropSession(String id, Map<String, String> options) {
     if (!sessions.containsKey(id)) {
       throw new RuntimeException("Session not found: " + id);
     } else {
@@ -531,12 +531,12 @@ public class StarlakeConnection implements Connection {
       throw new RuntimeException("Session not in progress: " + currentSession.getSessionId()
           + " -> " + currentSession.getStatus());
     } else {
-      currentSession.drop();
+      currentSession.drop(options);
       LOGGER.info("Session dropped: " + currentSession.getSessionId());
     }
   }
 
-  public void showSession() {
+  public void showSession(Map<String, String> options) {
     if (currentSession == null) {
       throw new RuntimeException("No current Session in progress.");
     } else {
@@ -545,7 +545,7 @@ public class StarlakeConnection implements Connection {
     }
   }
 
-  public void showSession(String id) {
+  public void showSession(String id, Map<String, String> options) {
     if (!sessions.containsKey(id)) {
       throw new RuntimeException("Session not found: " + id);
     } else {
@@ -554,7 +554,7 @@ public class StarlakeConnection implements Connection {
     }
   }
 
-  public void describeSession() {
+  public void describeSession(Map<String, String> options) {
     if (sessions.isEmpty()) {
       LOGGER.warning("Sessions are empty.");
     } else {

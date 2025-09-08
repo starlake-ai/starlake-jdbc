@@ -3,8 +3,10 @@ package ai.starlake.jdbc;
 import ai.starlake.transpiler.JSQLReplacer;
 import ai.starlake.transpiler.schema.CaseInsensitiveLinkedHashMap;
 import ai.starlake.transpiler.schema.JdbcMetaData;
+import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.expression.ExpressionVisitor;
 import net.sf.jsqlparser.expression.ExpressionVisitorAdapter;
+import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.StatementVisitorAdapter;
@@ -23,9 +25,11 @@ import net.sf.jsqlparser.statement.truncate.Truncate;
 import net.sf.jsqlparser.statement.update.Update;
 
 import java.math.BigInteger;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -41,15 +45,31 @@ public class StarlakeSession {
   // rewrite the queries using the replacement tables
   JdbcMetaData metaData;
 
+  CaseInsensitiveLinkedHashMap<String> options = new CaseInsensitiveLinkedHashMap<>();
+
   public enum Status {
     STARTED, APPLIED, DROPPED
   }
+
+  /**
+   * Options
+   *
+   * `persist` if session properties can be persisted in the schema
+   *
+   */
 
   private final StarlakeConnection conn;
   private final String sessionId;
   private Status status;
   private final Instant startInstant;
   private Instant endInstant;
+
+
+
+  PreparedStatement historyStatement = null;
+  PreparedStatement tableMappingDeleteStatement = null;
+  PreparedStatement tableMappingInsertStatement = null;
+
   private final CaseInsensitiveLinkedHashMap<Table> replacementTables =
       new CaseInsensitiveLinkedHashMap<>();
   private final TreeMap<Instant, String> statements = new TreeMap<>();
@@ -99,6 +119,20 @@ public class StarlakeSession {
             }
 
             replacementTables.put(originalName, replacementTable);
+
+            if (isPersistent() && tableMappingInsertStatement != null) {
+              try {
+                tableMappingDeleteStatement.setString(1, originalName);
+                tableMappingDeleteStatement.executeUpdate();
+
+                tableMappingInsertStatement.setString(1, originalName);
+                tableMappingInsertStatement.setString(2, replacementTable.getFullyQualifiedName());
+                tableMappingInsertStatement.executeUpdate();
+              } catch (Exception ex) {
+                LOGGER.log(Level.SEVERE, "Failed to persist the table mapping: " + originalName
+                    + " --> " + replacementTable, ex);
+              }
+            }
             return true;
           } else {
             return false;
@@ -207,11 +241,92 @@ public class StarlakeSession {
     return result;
   }
 
-  public StarlakeSession(StarlakeConnection conn, String id) throws SQLException {
+  public boolean isPersistent() {
+    return isTrue("persist");
+  }
+
+  public boolean isTrue(String key) {
+    return isTrue(options, key);
+  }
+
+  public boolean isTrue(Map<String, String> options, String key) {
+    if (options == null) {
+      return false;
+    } else {
+      String e = options.get(key);
+      return e != null && List.of("y", "yes", "true", "1").contains(e);
+    }
+  }
+
+  public boolean isFalse(String key) {
+    return !isTrue(key);
+  }
+
+  public boolean isFalse(Map<String, String> options, String key) {
+    return !isTrue(options, key);
+  }
+
+  public String getMappingTable() {
+    return sessionId + ".sl_table_map";
+  }
+
+  public String getHistoryTable() {
+    return sessionId + ".sl_session_hst";
+  }
+
+  public StarlakeSession(StarlakeConnection conn, String id, Map<String, String> options)
+      throws SQLException {
+    this.options.clear();
+    this.options.putAll(options);
+    this.conn = conn;
+    this.sessionId = id;
+    this.status = Status.STARTED;
+    this.startInstant = Instant.now();
+
     String currentSchema = conn.getSchema();
 
-    try (java.sql.Statement statement = conn.createStatement()) {
-      statement.executeUpdate("CREATE SCHEMA " + id);
+    try (java.sql.Statement statement = conn.wrapped.createStatement()) {
+      if (isPersistent()) {
+        statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS " + id);
+
+        //@formatter:off
+          final String SESSION_DDL_STR =
+                  "CREATE TABLE IF NOT EXISTS " + getMappingTable() + " (\n" +
+                  "    from_table       VARCHAR (256)\n" +
+                  "    , to_table       VARCHAR (256)\n" +
+                  "    , primary key(from_table)\n" +
+                  ")\n" +
+                  ";\n" +
+                  "\n" +
+                  "\n" +
+                  "CREATE TABLE IF NOT EXISTS " + getHistoryTable()  +" (\n" +
+                  "    update_timestamp         TIMESTAMP\n" +
+                  "    , sql_text               CLOB\n" +
+                  "    , primary key (update_timestamp)\n" +
+                  ")\n" +
+                  ";";
+        //@formatter:on
+
+        try {
+          for (Statement st : CCJSqlParserUtil.parseStatements(SESSION_DDL_STR)) {
+            statement.execute(st.toString());
+          }
+        } catch (JSQLParserException parserException) {
+          LOGGER.warning("Failed to create session persistence tables.");
+          this.options.put("persist", "false");
+        }
+
+        historyStatement = conn.wrapped.prepareStatement(
+            "INSERT INTO " + getHistoryTable() + " VALUES ( CURRENT_TIMESTAMP, ? )");
+
+        tableMappingDeleteStatement = conn.wrapped
+            .prepareStatement("DELETE FROM " + getMappingTable() + " WHERE from_table = ?");
+
+        tableMappingInsertStatement =
+            conn.wrapped.prepareStatement("INSERT INTO " + getMappingTable() + " VALUES ( ?, ? )");
+      } else {
+        statement.executeUpdate("CREATE SCHEMA " + id);
+      }
 
       try {
         // Snowflake sets any CREATE SCHEMA as current schema
@@ -220,13 +335,6 @@ public class StarlakeSession {
         LOGGER.warning("Failed to set current schema.");
       }
     }
-
-
-
-    this.conn = conn;
-    this.sessionId = id;
-    this.status = Status.STARTED;
-    this.startInstant = Instant.now();
     this.metaData = new JdbcMetaData(conn);
   }
 
@@ -243,25 +351,35 @@ public class StarlakeSession {
     return sb.reverse().toString();
   }
 
-  public StarlakeSession(StarlakeConnection conn) throws SQLException {
-    this(conn, generateUniqueID());
+  public StarlakeSession(StarlakeConnection conn, Map<String, String> options) throws SQLException {
+    this(conn, generateUniqueID(), options);
   }
 
-  public void drop() {
+  public void drop(Map<String, String> options) {
     this.status = Status.DROPPED;
     this.endInstant = Instant.now();
+
 
     try (java.sql.Statement statement = conn.createStatement()) {
       for (Table t : replacementTables.values()) {
         statement.executeUpdate("DROP TABLE " + t.getFullyQualifiedName());
       }
+
+      if (isPersistent() && tableMappingInsertStatement != null) {
+        statement.executeUpdate("DROP TABLE " + getMappingTable());
+      }
+
+      if (isPersistent() && historyStatement != null) {
+        statement.executeUpdate("DROP TABLE " + getHistoryTable());
+      }
+
       statement.executeUpdate("DROP SCHEMA " + sessionId);
     } catch (SQLException e) {
       LOGGER.log(Level.SEVERE, "Failed to drop schema when dropping session", e);
     }
   }
 
-  public void apply() {
+  public void apply(Map<String, String> options) {
     this.status = Status.APPLIED;
     this.endInstant = Instant.now();
 
@@ -273,10 +391,20 @@ public class StarlakeSession {
           LOGGER.log(Level.SEVERE, "Failed apply statement from session:\n" + sqlStr, ex);
         }
       }
-      for (Table t : replacementTables.values()) {
-        statement.executeUpdate("DROP TABLE " + t.getFullyQualifiedName());
+
+      if (isFalse(options, "keep")) {
+        for (Table t : replacementTables.values()) {
+          statement.executeUpdate("DROP TABLE " + t.getFullyQualifiedName());
+        }
+        if (isPersistent() && tableMappingInsertStatement != null) {
+          statement.executeUpdate("DROP TABLE " + getMappingTable());
+        }
+
+        if (isPersistent() && historyStatement != null) {
+          statement.executeUpdate("DROP TABLE " + getHistoryTable());
+        }
+        statement.executeUpdate("DROP SCHEMA " + sessionId);
       }
-      statement.executeUpdate("DROP SCHEMA " + sessionId);
     } catch (SQLException e) {
       LOGGER.log(Level.SEVERE, "Failed to drop schema after applying session", e);
     }
@@ -286,6 +414,11 @@ public class StarlakeSession {
     LOGGER.info("Rewrite:\n" + sqlStr);
     if (status == Status.STARTED) {
       statements.put(Instant.now(), sqlStr);
+
+      if (isPersistent() && historyStatement != null) {
+        historyStatement.setString(1, sqlStr);
+        historyStatement.executeUpdate();
+      }
 
       // maintain the replacement tables
       st.accept(statementVisitor, st);

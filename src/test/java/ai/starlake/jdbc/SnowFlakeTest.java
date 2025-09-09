@@ -50,16 +50,16 @@ public class SnowFlakeTest {
     }
   }
 
-  @Test
-  @Disabled
-  void testSelect() throws SQLException {
-    String sqlStr = "SELECT * FROM customer;";
-    try (Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sqlStr)) {
-      if (!rs.next()) {
-        Assertions.fail("No records returned;");
-      }
+    @Test
+    @Disabled
+    void testSelect() throws SQLException {
+        String sqlStr = "SELECT * FROM customer;";
+        try (Statement st = conn.createStatement(); ResultSet rs = st.executeQuery(sqlStr)) {
+            if (!rs.next()) {
+                Assertions.fail("No records returned;");
+            }
+        }
     }
-  }
 
   @Test
   void testClonedDMLSameSchema() throws SQLException {
@@ -177,4 +177,15 @@ public class SnowFlakeTest {
       }
     }
   }
+    @Test
+    void testAlterSession() throws SQLException {
+        /**
+         * Driver should not fail on proprietary SQL commands
+         */
+        String sqlStr = "ALTER SESSION SET QUOTED_IDENTIFIERS_IGNORE_CASE = true";
+        Statement st = conn.createStatement();
+        st.execute(sqlStr);
+        st.close();
+    }
+
 }

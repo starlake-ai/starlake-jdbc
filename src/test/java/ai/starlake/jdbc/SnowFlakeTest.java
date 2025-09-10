@@ -177,4 +177,16 @@ public class SnowFlakeTest {
       }
     }
   }
+
+  @Test
+  void testUnsupportedStatementsTable() throws SQLException {
+    String sessionId = "session1";
+    try (Statement st = conn.createStatement()) {
+      st.executeUpdate("ALTER SESSION SET QUOTED_IDENTIFIERS_IGNORE_CASE = true");
+      st.execute("BRANCH START " + sessionId + " WITH persist=true");
+      st.executeUpdate("ALTER SESSION SET QUOTED_IDENTIFIERS_IGNORE_CASE = true");
+      st.execute("BRANCH DROP " + sessionId + " WITH keep=true");
+    }
+  }
+
 }

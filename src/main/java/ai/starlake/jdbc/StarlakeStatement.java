@@ -28,6 +28,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLWarning;
 import java.sql.Statement;
+import java.util.logging.Level;
 
 public class StarlakeStatement implements Statement {
   private final StarlakeConnection connection;
@@ -100,7 +101,8 @@ public class StarlakeStatement implements Statement {
         }
       }
     } catch (JSQLParserException e) {
-      throw new RuntimeException(e);
+      connection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
+      return wrapped.executeUpdate(sql);
     }
   }
 

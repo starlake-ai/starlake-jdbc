@@ -5,29 +5,31 @@
 [![Issues](https://img.shields.io/github/issues/starlake-ai/jsqltranspiler)](https://github.com/starlake-ai/starlake-jdbc/issues)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://egghead.io/courses/how-to-contribute-to-an-open-source-project-on-github?af=5236ad)
 
-Run and test all your DDL/DML statements in a sandboxed session before applying to production:
+Run and test all your DDL/DML statements in a sandboxed branch before applying to production:
 
 - connect to your Database using Starlake JDBC Driver as wrapper around the RDBMS' driver
-- start a new session via `SESSION START`, which will create a new staging schema
+- start a new branch via `BRANCH START`, which will create a new staging schema
 - execute your DDL commands, which will create copies of the affected tables in the staging schema only without altering the existing tablesstaging
 - execute your Queries or DML statements, which will be intercepted and rewritten to use the staging schema and tablesapply
-- end your session via `SESSION APPLY` applying all the changes to production or `SESSION DROP`
-- Syntax: `SESSION` or `BRANCH` keyword can be used and mixed:
+- end your branch via `BRANCH APPLY` applying all the changes to production or `BRANCH DROP`
+- Syntax: `BRANCH` or `SESSION` keyword can be used and mixed:
   ```bnf
-  BRANCH START [sessionId]
-  BRANCH APPLY [sessionId]
-  BRANCH DROP  [sessionId]
+  BRANCH START [branchId] [ WITH key=value (, key=value)* ]
+  BRANCH APPLY [branchId] [ WITH key=value (, key=value)* ]
+  BRANCH DROP  [branchId] [ WITH key=value (, key=value)* ]
+  BRANCH DESCRIBE [branchId] 
+  BRANCH STATUS [branchId]
   ```
 
 # Samples
 
 ## CREATE TABLE
 ```sql
--- start a new session that will hold all modifications
-SESSION START session1;
+-- start a new branch that will hold all modifications
+BRANCH START branch1;
 
 -- create a new table w/o touching production
--- after execution, `session1.a` will exist, but not `public.a`
+-- after execution, `branch1.a` will exist, but not `public.a`
 CREATE TABLE a (test VARCHAR(40));
 
 -- populate the new table with data
@@ -38,14 +40,14 @@ INSERT INTO a VALUES ('test3');
 -- select from the new table, returns 3
 SELECT Count(*) FROM a;
 
--- apply the session
+-- apply the branch
 -- after execution, `public.a` will exist and hold 3 records
-SESSION APPLY;
+BRANCH APPLY;
 ```
 
 ## INSERT into existing table
 ```sql
--- create a new table in production (before session)
+-- create a new table in production (before branch)
 -- after execution, `public.a` will exist
 CREATE TABLE a (test VARCHAR(40));
 
@@ -53,49 +55,49 @@ CREATE TABLE a (test VARCHAR(40));
 INSERT INTO a VALUES ('test1');
 INSERT INTO a VALUES ('test2');
 
--- start a new session that will hold all modifications
-SESSION START session1;
+-- start a new branch that will hold all modifications
+BRANCH START branch1;
 
 -- populate the new table with data w/o touching productionadd more test cases
--- after execution `session.a` will hold 3 records while `public.a` still holds 2 records
+-- after execution `branch.a` will hold 3 records while `public.a` still holds 2 records
 INSERT INTO a VALUES ('test3');
 
 -- select from the new table, returns 3
 SELECT Count(*) FROM a;
 
--- apply the session
+-- apply the branch
 -- after execution, `public.a` will exist and hold 3 records
-SESSION APPLY;
+BRANCH APPLY;
 ```
 
 ## JOIN modified table
 ```sql
--- create a new table in production (before session)
+-- create a new table in production (before branch)
 -- after execution, `public.a` will exist
 CREATE TABLE a (test VARCHAR(40));
 INSERT INTO a VALUES ('test1');
 INSERT INTO a VALUES ('test2');
 INSERT INTO a VALUES ('test3');
 
--- create a new table in production (before session)
+-- create a new table in production (before branch)
 -- after execution, `public.b` will exist
 CREATE TABLE b (test VARCHAR(40));
 INSERT INTO b VALUES ('test1');
 INSERT INTO b VALUES ('test2');
 INSERT INTO b VALUES ('test3');
 
--- start a new session that will hold all modifications
-SESSION START session1;
+-- start a new branch that will hold all modifications
+BRANCH START branch1;
 
 -- delete data from `b` w/o touching production
--- after execution `session.b` will be empty, while `public.b` holds 3 records;
+-- after execution `branch.b` will be empty, while `public.b` holds 3 records;
 DELETE FROM b;
 
 -- joining the tables will return count=0
 SELECT Count(*) FROM a INNER JOIN b USING(test);
 
--- drop the session (reversing the deletion from `b`)
-SESSION DROP;
+-- drop the branch (reversing the deletion from `b`)
+BRANCH DROP;
 
 -- joining the tables will return count=3
 SELECT Count(*) FROM a INNER JOIN b USING(test);
@@ -108,16 +110,16 @@ Class.forName("ai.starlake.jdbc.StarlakeDriver");staging
 // Wrap an H2 in memory DB
 Driver driver = DriverManager.getDriver("jdbc:starlake:h2:test");
 
-// Define a session ID
-final String sessionId = "session1";
+// Define a branch ID
+final String branchId = "branch1";
 
 try (Statement st = conn.createStatement()) {
 
 // is a Starlake Session aware connection
 Assertions.assertInstanceOf(StarlakeConnection.class, conn);
 
-// Start a session
-st.execute("SESSION START " + sessionId);
+// Start a branch
+st.execute("BRANCH START " + branchId);
 Assertions.assertEquals(Status.STARTED,
     ((StarlakeConnection) conn).currentSession.getStatus());
 
@@ -125,15 +127,15 @@ Assertions.assertEquals(Status.STARTED,
 st.execute("CREATE TABLE a (b VARCHAR(1));");
 
 assertThatH2SchemaTableNotExists("public", "a");
-assertThatH2SessionTableExists(sessionId, "a");
+assertThatH2SessionTableExists(branchId, "a");
 
-// Apply the session by creating the table in schema "PUBLIC"
-st.execute("SESSION APPLY session1;");
+// Apply the branch by creating the table in schema "PUBLIC"
+st.execute("BRANCH APPLY branch1;");
 
 assertThatH2SchemaTableExists("public", "a");
-assertThatH2SessionNotExists(sessionId);
+assertThatH2SessionNotExists(branchId);
 
-// Confirm session status
+// Confirm branch status
 Assertions.assertEquals(Status.APPLIED,
     ((StarlakeConnection) conn).currentSession.getStatus());
 }

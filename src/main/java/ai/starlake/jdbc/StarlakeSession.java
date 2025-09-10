@@ -26,6 +26,7 @@ import net.sf.jsqlparser.statement.update.Update;
 
 import java.math.BigInteger;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.HashMap;
@@ -102,15 +103,18 @@ public class StarlakeSession {
             if (!(context instanceof CreateTable)) {
               // create table as select
               try (java.sql.Statement st = conn.wrapped.createStatement()) {
-                if (conn.wrapped.getMetaData().getDriverName().toLowerCase()
-                    .contains("jdbc:snowflake")) {
-                  LOGGER.info("Using `CLONE` on SnowFlake");
-                  st.executeUpdate("CREATE TABLE " + replacementTable.getFullyQualifiedName()
-                      + " CLONE " + originalName);
-                } else {
-                  st.executeUpdate("CREATE TABLE " + replacementTable.getFullyQualifiedName()
-                      + " AS SELECT * FROM " + originalName);
-                }
+                // if (conn.wrapped.getMetaData().getDriverName().toLowerCase()
+                // .contains("jdbc:snowflake")) {
+                // LOGGER.info("Using `CLONE` on SnowFlake");
+                // st.executeUpdate("CREATE TABLE " + replacementTable.getFullyQualifiedName()
+                // + " CLONE " + originalName);
+                // } else {
+                // st.executeUpdate("CREATE TABLE " + replacementTable.getFullyQualifiedName()
+                // + " AS SELECT * FROM " + originalName);
+                // }
+                String sql = conn.getCloneTableStatement(replacementTable.getFullyQualifiedName(),
+                    originalName);
+                st.executeUpdate(sql);
                 metaData.updateTable(conn, replacementTable);
               } catch (Exception ex) {
                 throw new RuntimeException("Failed to create a copy of " + originalName, ex);
@@ -249,7 +253,7 @@ public class StarlakeSession {
     return isTrue(options, key);
   }
 
-  public boolean isTrue(Map<String, String> options, String key) {
+  public static boolean isTrue(Map<String, String> options, String key) {
     if (options == null) {
       return false;
     } else {
@@ -262,17 +266,95 @@ public class StarlakeSession {
     return !isTrue(key);
   }
 
-  public boolean isFalse(Map<String, String> options, String key) {
+  public static boolean isFalse(Map<String, String> options, String key) {
     return !isTrue(options, key);
   }
 
   public String getMappingTable() {
+    return getMappingTable(sessionId);
+  }
+
+  public static String getMappingTable(String sessionId) {
     return sessionId + ".sl_table_map";
   }
 
   public String getHistoryTable() {
+    return getHistoryTable(sessionId);
+  }
+
+  public static String getHistoryTable(String sessionId) {
     return sessionId + ".sl_session_hst";
   }
+
+  public static StarlakeSession getPersistingSession(StarlakeConnection conn, String id,
+      Map<String, String> options) throws SQLException {
+    boolean foundMappingTable = false;
+    boolean foundHistoryTable = false;
+
+    final TreeMap<Instant, String> statements = new TreeMap<Instant, String>();
+    final CaseInsensitiveLinkedHashMap<Table> replacementTables =
+        new CaseInsensitiveLinkedHashMap<Table>();
+
+    if (isTrue(options, "persist") || isTrue(options, "continue")) {
+      try (java.sql.Statement statement = conn.wrapped.createStatement()) {
+        try (ResultSet rs = statement.executeQuery("SELECT * FROM " + getMappingTable(id))) {
+          while (rs.next()) {
+            String fromTable = rs.getString(1);
+            String toTable = rs.getString(2);
+            replacementTables.put(fromTable, new Table(toTable));
+          }
+          foundMappingTable = true;
+
+        } catch (Exception e) {
+          LOGGER.warning("Did not find mapping table for session " + id);
+        }
+      }
+
+      try (java.sql.Statement statement = conn.wrapped.createStatement()) {
+        try (ResultSet rs = statement.executeQuery("SELECT * FROM " + getHistoryTable(id))) {
+          while (rs.next()) {
+            java.sql.Timestamp timestamp = rs.getTimestamp(1);
+            String sqlText = rs.getString(2);
+
+            statements.put(timestamp.toInstant(), sqlText);
+          }
+          foundHistoryTable = true;
+        } catch (Exception e) {
+          LOGGER.warning("Did not find history table for session " + id);
+        }
+      }
+
+      if (foundMappingTable && foundHistoryTable) {
+        StarlakeSession session = new StarlakeSession(conn, id, options);
+        session.replacementTables.putAll(replacementTables);
+        session.statements.putAll(statements);
+
+        return session;
+      }
+    } else {
+      LOGGER.warning("Did not find session " + id);
+    }
+
+    return null;
+  }
+
+  // private String getCLOBTypeName() {
+  // try {
+  // String productName = conn.wrapped.getMetaData().getDatabaseProductName().toLowerCase();
+  // if (productName.contains("redshift")) {
+  // return "VARCHAR(max)";
+  // } else if (productName.contains("h2")) {
+  // return "CLOB";
+  // } else if (productName.contains("duckdb")) {
+  // return "TEXT";
+  // } else if (productName.contains("postgres")) {
+  // return "TEXT";
+  // }
+  // } catch (Exception ex) {
+  // LOGGER.log(Level.WARNING, "Failed to determine the database", ex);
+  // }
+  // return "STRING";
+  // }
 
   public StarlakeSession(StarlakeConnection conn, String id, Map<String, String> options)
       throws SQLException {
@@ -297,11 +379,9 @@ public class StarlakeSession {
                   "    , primary key(from_table)\n" +
                   ")\n" +
                   ";\n" +
-                  "\n" +
-                  "\n" +
                   "CREATE TABLE IF NOT EXISTS " + getHistoryTable()  +" (\n" +
                   "    update_timestamp         TIMESTAMP\n" +
-                  "    , sql_text               CLOB\n" +
+                  "    , sql_text               "+ conn.getClobType() +"\n" +
                   "    , primary key (update_timestamp)\n" +
                   ")\n" +
                   ";";

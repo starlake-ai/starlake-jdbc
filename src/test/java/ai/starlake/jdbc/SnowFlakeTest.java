@@ -12,10 +12,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Properties;
-import java.util.logging.Logger;
 
 public class SnowFlakeTest {
-  private final static Logger LOGGER = Logger.getLogger(SnowFlakeTest.class.getName());
   public static Connection conn;
 
   @BeforeAll

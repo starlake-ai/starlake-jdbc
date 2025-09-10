@@ -12,12 +12,15 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Properties;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class SnowFlakeTest {
+  private final static Logger LOGGER = Logger.getLogger(SnowFlakeTest.class.getName());
   public static Connection conn;
 
   @BeforeAll
-  static void init() throws SQLException {
+  static void init() {
     try {
       Class.forName("net.snowflake.client.jdbc.SnowflakeDriver");
       Class.forName("ai.starlake.jdbc.StarlakeDriver");
@@ -40,10 +43,15 @@ public class SnowFlakeTest {
     String url = String.format(
         "jdbc:starlake:snowflake://%s.snowflakecomputing.com/?user=%s&password=%s&warehouse=%s&db=%s&schema=%s",
         account, user, password, warehouse, database, schema);
-    Driver driver = DriverManager.getDriver(url);
-
-    Properties info = new Properties();
-    conn = driver.connect(url, info);
+    Driver driver = null;
+    try {
+      driver = DriverManager.getDriver(url);
+      Properties info = new Properties();
+      conn = driver.connect(url, info);
+    } catch (SQLException ex) {
+      LOGGER.log(Level.SEVERE, "Failed to connect to DB.", ex);
+      throw new RuntimeException(ex);
+    }
   }
 
   @Test

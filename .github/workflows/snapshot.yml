@@ -12,31 +12,50 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-    - id: install-gradle-properties
-      name: Install Gradle Properties from Secret
-      env:
-        GRADLE_PROPERTIES: ${{ secrets.GRADLE_PROPERTIES }}
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - id: install-gradle-properties
+        name: Install Gradle Properties from Secret
+        env:
+          GRADLE_PROPERTIES: ${{ secrets.GRADLE_PROPERTIES }}
         shell: bash
-      run: |
-        mkdir -p ~/.gradle/
-        echo "GRADLE_USER_HOME=${HOME}/.gradle" >> $GITHUB_ENV
-        echo "${GRADLE_PROPERTIES}" > ~/.gradle/gradle.properties
-    - name: Publish to Sonatype
-      run: LANG=en_US.UTF-8 ./gradlew check publish
-      env:
-        SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-        SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-        SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
-        SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
-        SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
-        SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
-#        USERNAME: ${{ github.actor }}
-#        TOKEN: ${{ secrets.SONATYPE_TOKEN }}
+        run: |
+          mkdir -p ~/.gradle/
+          echo "GRADLE_USER_HOME=${HOME}/.gradle" >> $GITHUB_ENV
+          echo "${GRADLE_PROPERTIES}" > ~/.gradle/gradle.properties
+
+      # 🔎 Debug step: confirm SNOWFLAKE_* env vars exist
+      - name: Debug Env Vars
+        run: env | grep SNOWFLAKE || true
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+
+      - name: Publish to Sonatype
+        run: |
+          LANG=en_US.UTF-8 ./gradlew check publish \
+            -DSNOWFLAKE_ACCOUNT=$SNOWFLAKE_ACCOUNT \
+            -DSNOWFLAKE_USER=$SNOWFLAKE_USER \
+            -DSNOWFLAKE_PASSWORD=$SNOWFLAKE_PASSWORD \
+            -DSNOWFLAKE_WAREHOUSE=$SNOWFLAKE_WAREHOUSE \
+            -DSNOWFLAKE_DATABASE=$SNOWFLAKE_DATABASE \
+            -DSNOWFLAKE_SCHEMA=$SNOWFLAKE_SCHEMA
+        env:
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}

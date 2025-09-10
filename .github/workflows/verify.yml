@@ -24,3 +24,10 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
     - run: LANG=en_US.UTF-8 ./gradlew check jacocoTestReport jacocoTestCoverageVerification coveralls
+      env:
+        SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+        SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+        SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+        SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+        SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+        SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}

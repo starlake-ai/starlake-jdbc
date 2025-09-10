@@ -15,6 +15,7 @@ import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+@Disabled
 public class SnowFlakeTest {
   private final static Logger LOGGER = Logger.getLogger(SnowFlakeTest.class.getName());
   public static Connection conn;

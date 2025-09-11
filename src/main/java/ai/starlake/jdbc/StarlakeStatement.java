@@ -62,7 +62,8 @@ public class StarlakeStatement implements Statement {
         }
       }
     } catch (JSQLParserException e) {
-      throw new RuntimeException(e);
+      connection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
+      return wrapped.executeQuery(sql);
     }
   }
 
@@ -188,7 +189,8 @@ public class StarlakeStatement implements Statement {
         }
       }
     } catch (JSQLParserException e) {
-      throw new RuntimeException(e);
+      connection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
+      return wrapped.execute(sql);
     }
   }
 

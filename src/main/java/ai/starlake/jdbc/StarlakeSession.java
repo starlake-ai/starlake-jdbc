@@ -100,18 +100,17 @@ public class StarlakeSession {
             Table replacementTable =
                 new Table(table.withSchemaName(sessionId).getFullyQualifiedName());
 
+            // keep appending suffices until we find a free name
+            String tableName = replacementTable.getName();
+            int i = 1;
+            while (metaData.getTable(replacementTable) != null) {
+              table.setName(tableName + "_" + i);
+              replacementTable.setName(tableName + "_" + i++);
+            }
+
             if (!(context instanceof CreateTable)) {
               // create table as select
               try (java.sql.Statement st = conn.wrapped.createStatement()) {
-                // if (conn.wrapped.getMetaData().getDriverName().toLowerCase()
-                // .contains("jdbc:snowflake")) {
-                // LOGGER.info("Using `CLONE` on SnowFlake");
-                // st.executeUpdate("CREATE TABLE " + replacementTable.getFullyQualifiedName()
-                // + " CLONE " + originalName);
-                // } else {
-                // st.executeUpdate("CREATE TABLE " + replacementTable.getFullyQualifiedName()
-                // + " AS SELECT * FROM " + originalName);
-                // }
                 String sql = conn.getCloneTableStatement(replacementTable.getFullyQualifiedName(),
                     originalName);
                 st.executeUpdate(sql);

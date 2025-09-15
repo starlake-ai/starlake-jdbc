@@ -108,7 +108,8 @@ public class StarlakeStatement implements Statement {
             if ("TABLE".equalsIgnoreCase(drop.getType())) {
               Table t = new Table(drop.getName().getFullyQualifiedName());
               try {
-                connection.currentSession.metaData.dropTable(t);
+                connection.currentSession.metaData.dropTable(
+                    t.setUnsetCatalogAndSchema(connection.getCatalog(), connection.getSchema()));
               } catch (SQLException e) {
                 throw new RuntimeException(e);
               }

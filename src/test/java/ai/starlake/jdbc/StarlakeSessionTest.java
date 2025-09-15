@@ -668,10 +668,6 @@ public class StarlakeSessionTest {
       // is a Starlake Session aware connection
       Assertions.assertInstanceOf(StarlakeConnection.class, conn);
 
-      // pre-create the schema
-      st.execute("CREATE SCHEMA session1");
-      assertThatH2SessionExists(sessionId);
-
       // Start a session
       st.execute("SESSION START " + sessionId + " WITH persist=TRUE");
       Assertions.assertEquals(Status.STARTED, conn.currentSession.getStatus());
@@ -724,10 +720,6 @@ public class StarlakeSessionTest {
       // is a Starlake Session aware connection
       Assertions.assertInstanceOf(StarlakeConnection.class, conn);
 
-      // pre-create the schema
-      st.execute("CREATE SCHEMA session1");
-      assertThatH2SessionExists(sessionId);
-
       // Start a session
       st.execute("SESSION START " + sessionId + " WITH persist=TRUE");
       Assertions.assertEquals(Status.STARTED, conn.currentSession.getStatus());
@@ -756,6 +748,42 @@ public class StarlakeSessionTest {
         if (rs.next()) {
           Assertions.assertEquals("test1", rs.getString(1));
           Assertions.assertEquals("test2", rs.getString(2));
+        } else {
+          Assertions.fail("No records returned.");
+        }
+      }
+
+    }
+  }
+
+  @Test
+  void testDropTableApplySessionAfter() throws ClassNotFoundException, SQLException {
+    final String sessionId = "session1";
+    try (Statement st = conn.createStatement()) {
+      // is a Starlake Session aware connection
+      Assertions.assertInstanceOf(StarlakeConnection.class, conn);
+
+      // Start a session
+      st.execute("SESSION START " + sessionId);
+      Assertions.assertEquals(Status.STARTED, conn.currentSession.getStatus());
+
+      st.executeUpdate("drop table test.b;");
+
+      Assertions.assertThrows(ai.starlake.transpiler.TableNotFoundException.class,
+          new Executable() {
+            @Override
+            public void execute() throws Throwable {
+              st.executeUpdate("INSERT INTO test.b VALUES('test1'); ");
+            }
+          });
+
+      st.execute("SESSION DROP");
+      assertThatH2SessionNotExists(sessionId);
+
+      st.executeUpdate("INSERT INTO test.b VALUES('test1'); ");
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test.b")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test1", rs.getString(1));
         } else {
           Assertions.fail("No records returned.");
         }

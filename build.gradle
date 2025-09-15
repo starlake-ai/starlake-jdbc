@@ -30,6 +30,7 @@ plugins {
 
 repositories {
     mavenCentral()
+    mavenLocal()
 
     //Sonatype
     maven {

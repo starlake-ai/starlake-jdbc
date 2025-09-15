@@ -11,7 +11,6 @@ import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.StatementVisitorAdapter;
 import net.sf.jsqlparser.statement.alter.Alter;
-import net.sf.jsqlparser.statement.alter.RenameTableStatement;
 import net.sf.jsqlparser.statement.create.index.CreateIndex;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
 import net.sf.jsqlparser.statement.delete.Delete;
@@ -20,7 +19,6 @@ import net.sf.jsqlparser.statement.insert.Insert;
 import net.sf.jsqlparser.statement.merge.Merge;
 import net.sf.jsqlparser.statement.select.FromItemVisitorAdapter;
 import net.sf.jsqlparser.statement.select.PlainSelect;
-import net.sf.jsqlparser.statement.select.Select;
 import net.sf.jsqlparser.statement.select.SelectVisitorAdapter;
 import net.sf.jsqlparser.statement.truncate.Truncate;
 import net.sf.jsqlparser.statement.update.Update;
@@ -423,8 +421,13 @@ public class StarlakeSession {
 
 
     try (java.sql.Statement statement = conn.createStatement()) {
+      // @todo: skip when table has been dropped already by a DROP TABLE statement
       for (Table t : replacementTables.values()) {
-        statement.executeUpdate("DROP TABLE " + t.getFullyQualifiedName());
+        try {
+          statement.executeUpdate("DROP TABLE " + t.getFullyQualifiedName());
+        } catch (SQLException e) {
+          LOGGER.warning("Failed to drop " + t.getFullyQualifiedName());
+        }
       }
 
       if (isPersistent() && tableMappingInsertStatement != null) {
@@ -485,11 +488,15 @@ public class StarlakeSession {
       // maintain the replacement tables
       st.accept(statementVisitor, st);
 
-      if (st instanceof Insert || st instanceof Update || st instanceof Delete
-          || st instanceof Merge || st instanceof Select || st instanceof Alter
-          || st instanceof Drop || st instanceof RenameTableStatement) {
+      if (!(st instanceof CreateTable)) {
         for (Map.Entry<String, Table> e : replacementTables.entrySet()) {
           metaData.addSynonym(e.getKey(), e.getValue().getFullyQualifiedName());
+        }
+      }
+
+      if (st instanceof Drop) {
+        for (Map.Entry<String, Table> e : replacementTables.entrySet()) {
+          metaData.dropSynonym(e.getKey(), e.getValue().getFullyQualifiedName());
         }
       }
 

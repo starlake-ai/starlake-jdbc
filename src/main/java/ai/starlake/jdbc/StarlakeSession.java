@@ -11,6 +11,7 @@ import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.StatementVisitorAdapter;
 import net.sf.jsqlparser.statement.alter.Alter;
+import net.sf.jsqlparser.statement.alter.RenameTableStatement;
 import net.sf.jsqlparser.statement.create.index.CreateIndex;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
 import net.sf.jsqlparser.statement.delete.Delete;
@@ -337,24 +338,6 @@ public class StarlakeSession {
     return null;
   }
 
-  // private String getCLOBTypeName() {
-  // try {
-  // String productName = conn.wrapped.getMetaData().getDatabaseProductName().toLowerCase();
-  // if (productName.contains("redshift")) {
-  // return "VARCHAR(max)";
-  // } else if (productName.contains("h2")) {
-  // return "CLOB";
-  // } else if (productName.contains("duckdb")) {
-  // return "TEXT";
-  // } else if (productName.contains("postgres")) {
-  // return "TEXT";
-  // }
-  // } catch (Exception ex) {
-  // LOGGER.log(Level.WARNING, "Failed to determine the database", ex);
-  // }
-  // return "STRING";
-  // }
-
   public StarlakeSession(StarlakeConnection conn, String id, Map<String, String> options)
       throws SQLException {
     this.options.clear();
@@ -503,7 +486,8 @@ public class StarlakeSession {
       st.accept(statementVisitor, st);
 
       if (st instanceof Insert || st instanceof Update || st instanceof Delete
-          || st instanceof Merge || st instanceof Select) {
+          || st instanceof Merge || st instanceof Select || st instanceof Alter
+          || st instanceof Drop || st instanceof RenameTableStatement) {
         for (Map.Entry<String, Table> e : replacementTables.entrySet()) {
           metaData.addSynonym(e.getKey(), e.getValue().getFullyQualifiedName());
         }

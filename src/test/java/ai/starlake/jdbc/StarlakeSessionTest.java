@@ -6,6 +6,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 import java.sql.Driver;
 import java.sql.DriverManager;
@@ -650,7 +651,113 @@ public class StarlakeSessionTest {
 
       try (ResultSet rs = st.executeQuery("SELECT * FROM test3.b")) {
         if (rs.next()) {
-          Assertions.fail("RRecords found in test3.b");
+          Assertions.fail("Records found in test3.b");
+        }
+      }
+
+    }
+  }
+
+  @Test
+  void testAlterTableDropSessionAfter() throws ClassNotFoundException, SQLException {
+    final String sessionId = "session1";
+
+    // Define a session ID
+
+    try (Statement st = conn.createStatement()) {
+      // is a Starlake Session aware connection
+      Assertions.assertInstanceOf(StarlakeConnection.class, conn);
+
+      // pre-create the schema
+      st.execute("CREATE SCHEMA session1");
+      assertThatH2SessionExists(sessionId);
+
+      // Start a session
+      st.execute("SESSION START " + sessionId + " WITH persist=TRUE");
+      Assertions.assertEquals(Status.STARTED, conn.currentSession.getStatus());
+      Assertions.assertTrue(conn.currentSession.isPersistent());
+      assertThatH2SessionTableExists(sessionId, conn.currentSession.getHistoryTable());
+      assertThatH2SessionTableExists(sessionId, conn.currentSession.getMappingTable());
+
+      st.executeUpdate("alter table test.b add column d VARCHAR(20);");
+      st.executeUpdate("INSERT INTO test.b VALUES('test1', 'test2'); ");
+
+      // query this table using the rewrite
+      assertThatH2SessionTableExists(sessionId, "b");
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test.b")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test1", rs.getString(1));
+          Assertions.assertEquals("test2", rs.getString(2));
+        } else {
+          Assertions.fail("No records returned.");
+        }
+      }
+
+      st.execute("SESSION DROP ");
+      Assertions.assertEquals(Status.DROPPED, conn.currentSession.getStatus());
+
+      st.executeUpdate("INSERT INTO test.b VALUES('test1'); ");
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test.b")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test1", rs.getString(1));
+          Assertions.assertThrows(SQLException.class, new Executable() {
+            @Override
+            public void execute() throws Throwable {
+              Assertions.assertEquals("test2", rs.getString(2));
+            }
+          });
+        } else {
+          Assertions.fail("No records returned.");
+        }
+      }
+
+    }
+  }
+
+  @Test
+  void testAlterTableApplySessionAfter() throws ClassNotFoundException, SQLException {
+    final String sessionId = "session1";
+
+    // Define a session ID
+
+    try (Statement st = conn.createStatement()) {
+      // is a Starlake Session aware connection
+      Assertions.assertInstanceOf(StarlakeConnection.class, conn);
+
+      // pre-create the schema
+      st.execute("CREATE SCHEMA session1");
+      assertThatH2SessionExists(sessionId);
+
+      // Start a session
+      st.execute("SESSION START " + sessionId + " WITH persist=TRUE");
+      Assertions.assertEquals(Status.STARTED, conn.currentSession.getStatus());
+      Assertions.assertTrue(conn.currentSession.isPersistent());
+      assertThatH2SessionTableExists(sessionId, conn.currentSession.getHistoryTable());
+      assertThatH2SessionTableExists(sessionId, conn.currentSession.getMappingTable());
+
+      st.executeUpdate("alter table test.b add column d VARCHAR(20);");
+      st.executeUpdate("INSERT INTO test.b VALUES('test1', 'test2'); ");
+
+      // query this table using the rewrite
+      assertThatH2SessionTableExists(sessionId, "b");
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test.b")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test1", rs.getString(1));
+          Assertions.assertEquals("test2", rs.getString(2));
+        } else {
+          Assertions.fail("No records returned.");
+        }
+      }
+
+      st.execute("SESSION APPLY");
+      Assertions.assertEquals(Status.APPLIED, conn.currentSession.getStatus());
+      assertThatH2SessionNotExists(sessionId);
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test.b")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test1", rs.getString(1));
+          Assertions.assertEquals("test2", rs.getString(2));
+        } else {
+          Assertions.fail("No records returned.");
         }
       }
 

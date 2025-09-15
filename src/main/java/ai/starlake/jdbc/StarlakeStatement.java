@@ -21,7 +21,9 @@ import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.SessionStatement;
+import net.sf.jsqlparser.statement.alter.Alter;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
+import net.sf.jsqlparser.statement.drop.Drop;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -62,7 +64,7 @@ public class StarlakeStatement implements Statement {
         }
       }
     } catch (JSQLParserException e) {
-      connection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
+      StarlakeConnection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
       return wrapped.executeQuery(sql);
     }
   }
@@ -94,6 +96,23 @@ public class StarlakeStatement implements Statement {
             } catch (SQLException e) {
               throw new RuntimeException(e);
             }
+          } else if (st instanceof Alter) {
+            Table t = new Table(((Alter) st).getTable().getFullyQualifiedName());
+            try {
+              connection.currentSession.metaData.updateTable(connection.wrapped, t);
+            } catch (SQLException e) {
+              throw new RuntimeException(e);
+            }
+          } else if (st instanceof Drop) {
+            Drop drop = (Drop) st;
+            if ("TABLE".equalsIgnoreCase(drop.getType())) {
+              Table t = new Table(drop.getName().getFullyQualifiedName());
+              try {
+                connection.currentSession.metaData.dropTable(t);
+              } catch (SQLException e) {
+                throw new RuntimeException(e);
+              }
+            }
           }
           return i;
 
@@ -102,7 +121,7 @@ public class StarlakeStatement implements Statement {
         }
       }
     } catch (JSQLParserException e) {
-      connection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
+      StarlakeConnection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
       return wrapped.executeUpdate(sql);
     }
   }
@@ -189,7 +208,7 @@ public class StarlakeStatement implements Statement {
         }
       }
     } catch (JSQLParserException e) {
-      connection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
+      StarlakeConnection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
       return wrapped.execute(sql);
     }
   }

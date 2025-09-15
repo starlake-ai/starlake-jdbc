@@ -244,9 +244,16 @@ public class StarlakeConnection implements Connection {
 
   @Override
   public void close() throws SQLException {
+    if (currentSession != null) {
+      currentSession.drop(currentSession.options);
+      sessions.remove(currentSession.getSessionId());
+      currentSession = null;
+    }
+
     executor.shutdown();
     try {
       executor.awaitTermination(1, TimeUnit.MINUTES);
+
     } catch (InterruptedException e) {
       throw new RuntimeException(e);
     }

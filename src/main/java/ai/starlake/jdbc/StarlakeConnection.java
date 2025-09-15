@@ -636,7 +636,7 @@ public class StarlakeConnection implements Connection {
   }
 
   public void startSession(Map<String, String> options) throws SQLException {
-    if (currentSession != null && currentSession.getStatus() == Status.STARTED) {
+    if (currentSession != null && currentSession.getStatus() == Status.STARTED && !currentSession.isPersistent()) {
       throw new RuntimeException("Session in progress: " + currentSession.getSessionId());
     } else {
       currentSession = new StarlakeSession(this, options);
@@ -646,7 +646,7 @@ public class StarlakeConnection implements Connection {
   }
 
   public void startSession(String id, Map<String, String> options) throws SQLException {
-    if (currentSession != null && currentSession.getStatus() == Status.STARTED) {
+    if (currentSession != null && currentSession.getStatus() == Status.STARTED && !currentSession.isPersistent()) {
       throw new RuntimeException("Session in progress: " + currentSession.getSessionId());
     } else {
       currentSession = StarlakeSession.getPersistingSession(this, id, options);

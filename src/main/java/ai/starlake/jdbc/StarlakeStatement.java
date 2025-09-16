@@ -41,12 +41,18 @@ public class StarlakeStatement implements Statement {
     this.wrapped = wrapped;
   }
 
-  @Override
-  public ResultSet executeQuery(String sql) throws SQLException {
+  @FunctionalInterface
+  private interface ResultSetExecutor {
+    ResultSet execute(String sql) throws SQLException;
+  }
+
+  // Generic method for executeQuery operations
+  private ResultSet executeQueryInternal(String sql, ResultSetExecutor wrappedExecutor,
+      ResultSetExecutor fallbackExecutor) throws SQLException {
+
     try {
       // @todo: avoid double parsing and unpipe into Statement instead of String
-      String unpipedSql = sql;
-      JSQLTranspiler.unpipe(sql, connection.executor, p -> {
+      String unpipedSql = JSQLTranspiler.unpipe(sql, connection.executor, p -> {
       });
 
       final net.sf.jsqlparser.statement.Statement st =
@@ -58,9 +64,9 @@ public class StarlakeStatement implements Statement {
       } else {
         if (connection.currentSession != null) {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
-          return new StarlakeResultSet(this, wrapped.executeQuery(rewrittenSql));
+          return new StarlakeResultSet(this, wrappedExecutor.execute(rewrittenSql));
         } else {
-          return new StarlakeResultSet(this, wrapped.executeQuery(unpipedSql));
+          return new StarlakeResultSet(this, wrappedExecutor.execute(unpipedSql));
         }
       }
     } catch (JSQLParserException e) {
@@ -70,12 +76,26 @@ public class StarlakeStatement implements Statement {
         connection.currentSession.historyStatement.setString(1, sql);
         connection.currentSession.historyStatement.executeUpdate();
       }
-      return wrapped.executeQuery(sql);
+      return fallbackExecutor.execute(sql);
     }
   }
 
+  // executeQuery methods
   @Override
-  public int executeUpdate(String sql) throws SQLException {
+  public ResultSet executeQuery(String sql) throws SQLException {
+    return executeQueryInternal(sql, wrapped::executeQuery, wrapped::executeQuery);
+  }
+
+  @FunctionalInterface
+  private interface SqlExecutor<T> {
+    T execute(String sql) throws SQLException;
+  }
+
+
+  // Generic method that contains all the common logic
+  private <T extends Number> T executeUpdateInternal(String sql, SqlExecutor<T> wrappedExecutor,
+      SqlExecutor<T> fallbackExecutor) throws SQLException {
+
     try {
       // @todo: avoid double parsing and unpipe into Statement instead of String
       String unpipedSql = JSQLTranspiler.unpipe(sql, connection.executor, p -> {
@@ -87,43 +107,19 @@ public class StarlakeStatement implements Statement {
 
       if (st instanceof SessionStatement) {
         connection.execute((SessionStatement) st);
-        return -1;
+        // Return appropriate type (-1 cast to T)
+        return (T) Integer.valueOf(-1);
       } else {
         if (connection.currentSession != null) {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
-          int i = wrapped.executeUpdate(rewrittenSql);
+          T result = wrappedExecutor.execute(rewrittenSql);
 
-          // update the metadata when tables have been changed
-          if (st instanceof CreateTable) {
-            Table t = new Table(((CreateTable) st).getTable().getFullyQualifiedName());
-            try {
-              connection.currentSession.metaData.updateTable(connection.wrapped, t);
-            } catch (SQLException e) {
-              throw new RuntimeException(e);
-            }
-          } else if (st instanceof Alter) {
-            Table t = new Table(((Alter) st).getTable().getFullyQualifiedName());
-            try {
-              connection.currentSession.metaData.updateTable(connection.wrapped, t);
-            } catch (SQLException e) {
-              throw new RuntimeException(e);
-            }
-          } else if (st instanceof Drop) {
-            Drop drop = (Drop) st;
-            if ("TABLE".equalsIgnoreCase(drop.getType())) {
-              Table t = new Table(drop.getName().getFullyQualifiedName());
-              try {
-                connection.currentSession.metaData.dropTable(
-                    t.setUnsetCatalogAndSchema(connection.getCatalog(), connection.getSchema()));
-              } catch (SQLException e) {
-                throw new RuntimeException(e);
-              }
-            }
-          }
-          return i;
+          // Update metadata when tables have been changed
+          updateMetadataIfNeeded(st);
 
+          return result;
         } else {
-          return wrapped.executeUpdate(unpipedSql);
+          return wrappedExecutor.execute(unpipedSql);
         }
       }
     } catch (JSQLParserException e) {
@@ -133,8 +129,35 @@ public class StarlakeStatement implements Statement {
         connection.currentSession.historyStatement.setString(1, sql);
         connection.currentSession.historyStatement.executeUpdate();
       }
-      return wrapped.executeUpdate(sql);
+      return fallbackExecutor.execute(sql);
     }
+  }
+
+  // Extract metadata update logic to separate method
+  private void updateMetadataIfNeeded(net.sf.jsqlparser.statement.Statement st) {
+    try {
+      if (st instanceof CreateTable) {
+        Table t = new Table(((CreateTable) st).getTable().getFullyQualifiedName());
+        connection.currentSession.metaData.updateTable(connection.wrapped, t);
+      } else if (st instanceof Alter) {
+        Table t = new Table(((Alter) st).getTable().getFullyQualifiedName());
+        connection.currentSession.metaData.updateTable(connection.wrapped, t);
+      } else if (st instanceof Drop) {
+        Drop drop = (Drop) st;
+        if ("TABLE".equalsIgnoreCase(drop.getType())) {
+          Table t = new Table(drop.getName().getFullyQualifiedName());
+          connection.currentSession.metaData.dropTable(
+              t.setUnsetCatalogAndSchema(connection.getCatalog(), connection.getSchema()));
+        }
+      }
+    } catch (SQLException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  @Override
+  public int executeUpdate(String sql) throws SQLException {
+    return executeUpdateInternal(sql, wrapped::executeUpdate, wrapped::executeUpdate);
   }
 
   @Override
@@ -197,8 +220,15 @@ public class StarlakeStatement implements Statement {
     wrapped.setCursorName(name);
   }
 
-  @Override
-  public boolean execute(String sql) throws SQLException {
+  @FunctionalInterface
+  private interface BooleanExecutor {
+    boolean execute(String sql) throws SQLException;
+  }
+
+  // Generic method for execute operations
+  private boolean executeInternal(String sql, BooleanExecutor wrappedExecutor,
+      BooleanExecutor fallbackExecutor) throws SQLException {
+
     try {
       // @todo: avoid double parsing and unpipe into Statement instead of String
       String unpipedSql = JSQLTranspiler.unpipe(sql, connection.executor, p -> {
@@ -213,9 +243,9 @@ public class StarlakeStatement implements Statement {
       } else {
         if (connection.currentSession != null) {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
-          return wrapped.execute(rewrittenSql);
+          return wrappedExecutor.execute(rewrittenSql);
         } else {
-          return wrapped.execute(unpipedSql);
+          return wrappedExecutor.execute(unpipedSql);
         }
       }
     } catch (JSQLParserException e) {
@@ -225,8 +255,13 @@ public class StarlakeStatement implements Statement {
         connection.currentSession.historyStatement.setString(1, sql);
         connection.currentSession.historyStatement.executeUpdate();
       }
-      return wrapped.execute(sql);
+      return fallbackExecutor.execute(sql);
     }
+  }
+
+  @Override
+  public boolean execute(String sql) throws SQLException {
+    return executeInternal(sql, wrapped::execute, wrapped::execute);
   }
 
   @Override
@@ -290,7 +325,7 @@ public class StarlakeStatement implements Statement {
   }
 
   @Override
-  public Connection getConnection() throws SQLException {
+  public Connection getConnection() {
     return connection;
   }
 
@@ -306,32 +341,38 @@ public class StarlakeStatement implements Statement {
 
   @Override
   public int executeUpdate(String sql, int autoGeneratedKeys) throws SQLException {
-    return wrapped.executeUpdate(sql, autoGeneratedKeys);
+    return executeUpdateInternal(sql, s -> wrapped.executeUpdate(s, autoGeneratedKeys),
+        s -> wrapped.executeUpdate(s, autoGeneratedKeys));
   }
 
   @Override
   public int executeUpdate(String sql, int[] columnIndexes) throws SQLException {
-    return wrapped.executeUpdate(sql, columnIndexes);
+    return executeUpdateInternal(sql, s -> wrapped.executeUpdate(s, columnIndexes),
+        s -> wrapped.executeUpdate(s, columnIndexes));
   }
 
   @Override
   public int executeUpdate(String sql, String[] columnNames) throws SQLException {
-    return wrapped.executeUpdate(sql, columnNames);
+    return executeUpdateInternal(sql, s -> wrapped.executeUpdate(s, columnNames),
+        s -> wrapped.executeUpdate(s, columnNames));
   }
 
   @Override
   public boolean execute(String sql, int autoGeneratedKeys) throws SQLException {
-    return wrapped.execute(sql, autoGeneratedKeys);
+    return executeInternal(sql, s -> wrapped.execute(s, autoGeneratedKeys),
+        s -> wrapped.execute(s, autoGeneratedKeys));
   }
 
   @Override
   public boolean execute(String sql, int[] columnIndexes) throws SQLException {
-    return wrapped.execute(sql, columnIndexes);
+    return executeInternal(sql, s -> wrapped.execute(s, columnIndexes),
+        s -> wrapped.execute(s, columnIndexes));
   }
 
   @Override
   public boolean execute(String sql, String[] columnNames) throws SQLException {
-    return wrapped.execute(sql, columnNames);
+    return executeInternal(sql, s -> wrapped.execute(s, columnNames),
+        s -> wrapped.execute(s, columnNames));
   }
 
   @Override
@@ -386,22 +427,25 @@ public class StarlakeStatement implements Statement {
 
   @Override
   public long executeLargeUpdate(String sql) throws SQLException {
-    return wrapped.executeLargeUpdate(sql);
+    return executeUpdateInternal(sql, wrapped::executeLargeUpdate, wrapped::executeLargeUpdate);
   }
 
   @Override
   public long executeLargeUpdate(String sql, int autoGeneratedKeys) throws SQLException {
-    return wrapped.executeLargeUpdate(sql, autoGeneratedKeys);
+    return executeUpdateInternal(sql, s -> wrapped.executeLargeUpdate(s, autoGeneratedKeys),
+        s -> wrapped.executeLargeUpdate(s, autoGeneratedKeys));
   }
 
   @Override
   public long executeLargeUpdate(String sql, int[] columnIndexes) throws SQLException {
-    return wrapped.executeLargeUpdate(sql, columnIndexes);
+    return executeUpdateInternal(sql, s -> wrapped.executeLargeUpdate(s, columnIndexes),
+        s -> wrapped.executeLargeUpdate(s, columnIndexes));
   }
 
   @Override
   public long executeLargeUpdate(String sql, String[] columnNames) throws SQLException {
-    return wrapped.executeLargeUpdate(sql, columnNames);
+    return executeUpdateInternal(sql, s -> wrapped.executeLargeUpdate(s, columnNames),
+        s -> wrapped.executeLargeUpdate(s, columnNames));
   }
 
   @Override

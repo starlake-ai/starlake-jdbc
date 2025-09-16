@@ -245,7 +245,11 @@ public class StarlakeConnection implements Connection {
   @Override
   public void close() throws SQLException {
     if (currentSession != null) {
-      currentSession.drop(currentSession.options);
+      if (currentSession.getStatus() == Status.STARTED) {
+        LOGGER.warning("Started current session " + currentSession.getSessionId()
+            + " found when closing connection. Will DROP it.");
+        currentSession.drop(currentSession.options);
+      }
       sessions.remove(currentSession.getSessionId());
       currentSession = null;
     }
@@ -636,7 +640,8 @@ public class StarlakeConnection implements Connection {
   }
 
   public void startSession(Map<String, String> options) throws SQLException {
-    if (currentSession != null && currentSession.getStatus() == Status.STARTED && !currentSession.isPersistent()) {
+    if (currentSession != null && currentSession.getStatus() == Status.STARTED
+        && !currentSession.isPersistent()) {
       throw new RuntimeException("Session in progress: " + currentSession.getSessionId());
     } else {
       currentSession = new StarlakeSession(this, options);
@@ -646,7 +651,8 @@ public class StarlakeConnection implements Connection {
   }
 
   public void startSession(String id, Map<String, String> options) throws SQLException {
-    if (currentSession != null && currentSession.getStatus() == Status.STARTED && !currentSession.isPersistent()) {
+    if (currentSession != null && currentSession.getStatus() == Status.STARTED
+        && !currentSession.isPersistent()) {
       throw new RuntimeException("Session in progress: " + currentSession.getSessionId());
     } else {
       currentSession = StarlakeSession.getPersistingSession(this, id, options);

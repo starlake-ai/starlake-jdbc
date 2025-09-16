@@ -305,9 +305,9 @@ public class StarlakeSession {
     boolean foundMappingTable = false;
     boolean foundHistoryTable = false;
 
-    final TreeMap<Instant, String> statements = new TreeMap<Instant, String>();
+    final TreeMap<Instant, String> statements = new TreeMap<>();
     final CaseInsensitiveLinkedHashMap<Table> replacementTables =
-        new CaseInsensitiveLinkedHashMap<Table>();
+        new CaseInsensitiveLinkedHashMap<>();
 
     if (isTrue(options, "persist") || isTrue(options, "continue")) {
       try (java.sql.Statement statement = conn.wrapped.createStatement()) {
@@ -404,14 +404,16 @@ public class StarlakeSession {
         statement.executeUpdate("CREATE SCHEMA " + id);
       }
 
-      try {
-        // Snowflake sets any CREATE SCHEMA as current schema
-        statement.executeUpdate("USE SCHEMA " + currentSchema);
-      } catch (Exception e) {
-        LOGGER.warning("Failed to set current schema.");
+      // Snowflake sets any CREATE SCHEMA as current schema
+      if (List.of(StarlakeConnection.DatabaseType.SNOWFLAKE).contains(conn.type)) {
+        try {
+          statement.executeUpdate("USE SCHEMA " + currentSchema);
+        } catch (Exception e) {
+          LOGGER.warning("Failed to set current schema.");
+        }
       }
     }
-    this.metaData = new JdbcMetaData(conn);
+    this.metaData = new JdbcMetaData(conn.wrapped);
   }
 
   public static String generateUniqueID() {

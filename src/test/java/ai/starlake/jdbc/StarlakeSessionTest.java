@@ -807,4 +807,35 @@ public class StarlakeSessionTest {
 
     }
   }
+
+  @Test
+  void continueSession() throws ClassNotFoundException, SQLException {
+    final String sessionId = "session1";
+    try (Statement st = conn.createStatement()) {
+      // is a Starlake Session aware connection
+      Assertions.assertInstanceOf(StarlakeConnection.class, conn);
+
+      // Start a session
+      st.execute("SESSION START " + sessionId + " WITH persist=true");
+      Assertions.assertEquals(Status.STARTED, conn.currentSession.getStatus());
+
+      st.executeUpdate("INSERT INTO test.b VALUES('test1'); ");
+
+      // Start a session
+      st.execute("SESSION START " + sessionId + " WITH persist=true");
+      Assertions.assertEquals(Status.STARTED, conn.currentSession.getStatus());
+
+      st.executeUpdate("INSERT INTO test.b VALUES('test1'); ");
+
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test.b")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test1", rs.getString(1));
+        } else {
+          Assertions.fail("No records returned.");
+        }
+      }
+    }
+  }
+
+
 }

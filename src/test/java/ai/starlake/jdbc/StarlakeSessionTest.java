@@ -202,10 +202,10 @@ public class StarlakeSessionTest {
     try (Statement st = conn.wrapped.createStatement();
         ResultSet rs = st.executeQuery(catalogName != null
             ? "SELECT schema_name\n" + "FROM information_schema.schemata\n"
-                + "WHERE catalog_name = '" + catalogName + "' AND schema_name = '" + schemaName
-                + "'\n" + ";"
+                + "WHERE catalog_name = '" + catalogName.toUpperCase() + "' AND schema_name = '"
+                + schemaName.toUpperCase() + "'\n" + ";"
             : "SELECT schema_name\n" + "FROM information_schema.schemata\n"
-                + "WHERE schema_name = '" + schemaName + "'\n" + ";")) {
+                + "WHERE schema_name = '" + schemaName.toUpperCase() + "'\n" + ";")) {
       return rs.next();
     }
   }
@@ -230,6 +230,14 @@ public class StarlakeSessionTest {
   private void assertThatH2SchemaTableNotExists(String schema, String tableName)
       throws SQLException {
     Assertions.assertFalse(checkH2TableExists(schema.toUpperCase(), tableName.toUpperCase()));
+  }
+
+  private void assertThatH2SchemaNotExists(String schema) throws SQLException {
+    Assertions.assertFalse(checkH2SchemaExists(schema));
+  }
+
+  private void assertThatH2SchemaExists(String schema) throws SQLException {
+    Assertions.assertTrue(checkH2SchemaExists(schema));
   }
 
   private void assertThatH2SchemaTableTableIsEmpty(String schemaName, String tableName)
@@ -834,6 +842,43 @@ public class StarlakeSessionTest {
           Assertions.fail("No records returned.");
         }
       }
+    }
+  }
+
+  @Test
+  void filterSchemaDMLWithinSession() throws ClassNotFoundException, SQLException {
+    final String sessionId = "session1";
+    try (Statement st = conn.createStatement()) {
+      // is a Starlake Session aware connection
+      Assertions.assertInstanceOf(StarlakeConnection.class, conn);
+
+      // Start a session
+      st.execute("SESSION START " + sessionId + " WITH persist=true");
+      Assertions.assertEquals(Status.STARTED, conn.currentSession.getStatus());
+
+      st.executeUpdate("CREATE SCHEMA test4;");
+      assertThatH2SchemaNotExists("test4");
+
+      st.executeUpdate("CREATE TABLE IF NOT EXISTS test4.f (c VARCHAR(40));");
+      st.executeUpdate("INSERT INTO test4.f VALUES('test1'); ");
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test4.f")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test1", rs.getString(1));
+        } else {
+          Assertions.fail("No records returned.");
+        }
+      }
+      st.execute("SESSION APPLY " + sessionId + " WITH persist=true");
+      assertThatH2SchemaExists("test4");
+
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test4.f")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test1", rs.getString(1));
+        } else {
+          Assertions.fail("No records returned.");
+        }
+      }
+
     }
   }
 

@@ -18,16 +18,20 @@ package ai.starlake.jdbc;
 
 import ai.starlake.transpiler.JSQLReplacer;
 import ai.starlake.transpiler.schema.CaseInsensitiveLinkedHashMap;
+import ai.starlake.transpiler.schema.JdbcCatalog;
 import ai.starlake.transpiler.schema.JdbcMetaData;
+import ai.starlake.transpiler.schema.JdbcSchema;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.expression.ExpressionVisitor;
 import net.sf.jsqlparser.expression.ExpressionVisitorAdapter;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
+import net.sf.jsqlparser.schema.MultiPartName;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.StatementVisitorAdapter;
 import net.sf.jsqlparser.statement.alter.Alter;
 import net.sf.jsqlparser.statement.create.index.CreateIndex;
+import net.sf.jsqlparser.statement.create.schema.CreateSchema;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
 import net.sf.jsqlparser.statement.delete.Delete;
 import net.sf.jsqlparser.statement.drop.Drop;
@@ -166,6 +170,30 @@ public class StarlakeSession {
       return super.visit(createTable, context);
     }
 
+    @Override
+    public <S> Void visit(CreateSchema createSchema, S context) {
+      String schemaName = createSchema.getSchemaName();
+      String catalogName = metaData.getCurrentCatalogName();
+
+      if (MultiPartName.isQuoted(schemaName)) {
+        schemaName = MultiPartName.unquote(schemaName);
+      }
+
+      String[] nameParts = schemaName.split("\\.");
+      if (nameParts.length == 2) {
+        catalogName = nameParts[0];
+        schemaName = nameParts[1];
+      }
+
+      JdbcCatalog catalog = metaData.get(catalogName);
+      if (catalog != null && !catalog.containsKey(schemaName)) {
+        catalog.put(new JdbcSchema(schemaName, catalogName));
+      }
+
+      // check if table does not exist yet existing schema
+      return super.visit(createSchema, context);
+    }
+
     public <S> Void visit(CreateIndex index, S context) {
       modifyingTableVisitor.visitFromItem(index.getTable(), context);
 
@@ -197,6 +225,24 @@ public class StarlakeSession {
     public <S> Void visit(Drop drop, S context) {
       if (drop.getType().equalsIgnoreCase("table")) {
         modifyingTableVisitor.visitFromItem(drop.getName(), context);
+      } else if (drop.getType().equalsIgnoreCase("schema")) {
+        String schemaName = drop.getName().getFullyQualifiedName();
+        String catalogName = metaData.getCurrentCatalogName();
+
+        if (MultiPartName.isQuoted(schemaName)) {
+          schemaName = MultiPartName.unquote(schemaName);
+        }
+
+        String[] nameParts = schemaName.split("\\.");
+        if (nameParts.length == 2) {
+          catalogName = nameParts[0];
+          schemaName = nameParts[1];
+        }
+
+        JdbcCatalog catalog = metaData.get(catalogName);
+        if (catalog != null && !catalog.containsKey(schemaName)) {
+          catalog.remove(schemaName);
+        }
       }
 
       return super.visit(drop, context);
@@ -466,7 +512,7 @@ public class StarlakeSession {
     this.status = Status.APPLIED;
     this.endInstant = Instant.now();
 
-    try (java.sql.Statement statement = conn.createStatement()) {
+    try (java.sql.Statement statement = conn.wrapped.createStatement()) {
       for (String sqlStr : statements.values()) {
         try {
           statement.execute(sqlStr);

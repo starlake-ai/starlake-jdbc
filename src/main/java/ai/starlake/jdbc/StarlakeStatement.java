@@ -22,6 +22,7 @@ import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.SessionStatement;
 import net.sf.jsqlparser.statement.alter.Alter;
+import net.sf.jsqlparser.statement.create.schema.CreateSchema;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
 import net.sf.jsqlparser.statement.drop.Drop;
 
@@ -64,7 +65,14 @@ public class StarlakeStatement implements Statement {
       } else {
         if (connection.currentSession != null) {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
-          return new StarlakeResultSet(this, wrappedExecutor.execute(rewrittenSql));
+
+          if (st instanceof CreateSchema || st instanceof Drop
+              && "schema".equalsIgnoreCase(((Drop) st).getName().getFullyQualifiedName())) {
+            StarlakeSession.LOGGER.warning("Ignore schema DML statements.");
+            return new StarlakeVirtualResultSet("Records", "0");
+          } else {
+            return new StarlakeResultSet(this, wrappedExecutor.execute(rewrittenSql));
+          }
         } else {
           return new StarlakeResultSet(this, wrappedExecutor.execute(unpipedSql));
         }
@@ -112,7 +120,14 @@ public class StarlakeStatement implements Statement {
       } else {
         if (connection.currentSession != null) {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
-          T result = wrappedExecutor.execute(rewrittenSql);
+          T result;
+          if (st instanceof CreateSchema || st instanceof Drop
+              && "schema".equalsIgnoreCase(((Drop) st).getName().getFullyQualifiedName())) {
+            StarlakeSession.LOGGER.warning("Ignore schema DML statements.");
+            result = (T) Integer.valueOf(-1);
+          } else {
+            result = wrappedExecutor.execute(rewrittenSql);
+          }
 
           // Update metadata when tables have been changed
           updateMetadataIfNeeded(st);
@@ -243,7 +258,13 @@ public class StarlakeStatement implements Statement {
       } else {
         if (connection.currentSession != null) {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
-          return wrappedExecutor.execute(rewrittenSql);
+          if (st instanceof CreateSchema || st instanceof Drop
+              && "schema".equalsIgnoreCase(((Drop) st).getName().getFullyQualifiedName())) {
+            StarlakeSession.LOGGER.warning("Ignore schema DML statements.");
+            return false;
+          } else {
+            return wrappedExecutor.execute(rewrittenSql);
+          }
         } else {
           return wrappedExecutor.execute(unpipedSql);
         }

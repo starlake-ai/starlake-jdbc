@@ -53,13 +53,13 @@ public class StarlakeConnection implements Connection {
   protected final Connection wrapped;
   protected final ExecutorService executor = Executors.newCachedThreadPool();
 
-  enum DatabaseType {
+  protected enum DatabaseType {
     MYSQL, MARIADB, POSTGRES, ORACLE, SQLSERVER, SQLITE, H2, DERBY, DB2, FIREBIRD, HSQL, INFORMIX, TERADATA, SAPDB, BIGQUERY, SNOWFLAKE, REDSHIFT, DATABRICKS, UNKNOWN
   }
 
   protected final DatabaseType type;
 
-  public DatabaseType getType() {
+  protected DatabaseType getType() {
     return type;
   }
 

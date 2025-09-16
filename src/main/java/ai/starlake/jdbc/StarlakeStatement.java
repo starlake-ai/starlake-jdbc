@@ -33,7 +33,7 @@ import java.sql.Statement;
 import java.util.logging.Level;
 
 public class StarlakeStatement implements Statement {
-  private final StarlakeConnection connection;
+  protected StarlakeConnection connection;
   private final Statement wrapped;
 
   public StarlakeStatement(StarlakeConnection connection, Statement wrapped) {
@@ -65,6 +65,11 @@ public class StarlakeStatement implements Statement {
       }
     } catch (JSQLParserException e) {
       StarlakeConnection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
+      if (connection.currentSession != null && connection.currentSession.isPersistent()
+          && connection.currentSession.historyStatement != null) {
+        connection.currentSession.historyStatement.setString(1, sql);
+        connection.currentSession.historyStatement.executeUpdate();
+      }
       return wrapped.executeQuery(sql);
     }
   }
@@ -123,6 +128,11 @@ public class StarlakeStatement implements Statement {
       }
     } catch (JSQLParserException e) {
       StarlakeConnection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
+      if (connection.currentSession != null && connection.currentSession.isPersistent()
+          && connection.currentSession.historyStatement != null) {
+        connection.currentSession.historyStatement.setString(1, sql);
+        connection.currentSession.historyStatement.executeUpdate();
+      }
       return wrapped.executeUpdate(sql);
     }
   }
@@ -210,6 +220,11 @@ public class StarlakeStatement implements Statement {
       }
     } catch (JSQLParserException e) {
       StarlakeConnection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
+      if (connection.currentSession != null && connection.currentSession.isPersistent()
+          && connection.currentSession.historyStatement != null) {
+        connection.currentSession.historyStatement.setString(1, sql);
+        connection.currentSession.historyStatement.executeUpdate();
+      }
       return wrapped.execute(sql);
     }
   }

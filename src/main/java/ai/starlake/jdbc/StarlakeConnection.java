@@ -657,6 +657,7 @@ public class StarlakeConnection implements Connection {
     } else {
       currentSession = StarlakeSession.getPersistingSession(this, id, options);
       if (currentSession != null) {
+        sessions.put(id, currentSession);
         LOGGER.info("Persisting Session continued: " + currentSession.getSessionId());
       } else {
         currentSession = new StarlakeSession(this, id, options);
@@ -708,17 +709,34 @@ public class StarlakeConnection implements Connection {
 
   public void dropSession(String id, Map<String, String> options) {
     if (!sessions.containsKey(id)) {
-      throw new RuntimeException("Session not found: " + id);
+      if (StarlakeSession.isTrue(options, "persist")) {
+        try {
+          StarlakeSession session = StarlakeSession.getPersistingSession(this, id, options);
+          if (session != null && session.getStatus() == Status.STARTED) {
+            session.drop(options);
+            LOGGER.info("Session dropped: " + currentSession.getSessionId());
+          } else {
+            LOGGER.warning("No running Session not found: " + id);
+          }
+        } catch (Exception ex) {
+          LOGGER.warning("Session not found: " + id);
+        }
+        return;
+      } else {
+        throw new RuntimeException("Session not found: " + id);
+      }
     } else {
       currentSession = sessions.get(id);
     }
 
-    if (currentSession.getStatus() != Status.STARTED) {
-      throw new RuntimeException("Session not in progress: " + currentSession.getSessionId()
-          + " -> " + currentSession.getStatus());
-    } else {
-      currentSession.drop(options);
-      LOGGER.info("Session dropped: " + currentSession.getSessionId());
+    if (currentSession != null) {
+      if (currentSession.getStatus() != Status.STARTED) {
+        throw new RuntimeException("Session not in progress: " + currentSession.getSessionId()
+            + " -> " + currentSession.getStatus());
+      } else {
+        currentSession.drop(options);
+        LOGGER.info("Session dropped: " + currentSession.getSessionId());
+      }
     }
   }
 

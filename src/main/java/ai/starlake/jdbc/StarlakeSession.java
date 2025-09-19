@@ -389,6 +389,27 @@ public class StarlakeSession {
         session.replacementTables.putAll(replacementTables);
         session.statements.putAll(statements);
 
+        // Maintain the meta data for all persisting replacement tables
+        for (String sqlStr : statements.values()) {
+          try {
+            Statement st = CCJSqlParserUtil.parse(sqlStr);
+            if (st instanceof CreateSchema) {
+              st.accept(session.statementVisitor, null);
+            } else if (st instanceof Drop) {
+              Drop drop = (Drop) st;
+              if ("schema".equalsIgnoreCase(drop.getType())) {
+                st.accept(session.statementVisitor, null);
+              }
+            }
+          } catch (JSQLParserException e) {
+          }
+        }
+
+        // Maintain the meta data for all persisting replacement tables
+        for (Table replacementTable : replacementTables.values()) {
+          session.metaData.updateTable(conn, replacementTable);
+        }
+
         return session;
       }
     } else {

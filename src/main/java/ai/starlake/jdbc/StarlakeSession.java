@@ -401,7 +401,8 @@ public class StarlakeSession {
                 st.accept(session.statementVisitor, null);
               }
             }
-          } catch (JSQLParserException e) {
+          } catch (JSQLParserException ignore) {
+            LOGGER.fine("Failed to parse:\n" + sqlStr);
           }
         }
 

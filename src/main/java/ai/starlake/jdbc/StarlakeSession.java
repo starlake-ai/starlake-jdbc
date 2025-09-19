@@ -429,7 +429,9 @@ public class StarlakeSession {
     this.status = Status.STARTED;
     this.startInstant = Instant.now();
 
+    String currentCatalog = conn.getCatalog();
     String currentSchema = conn.getSchema();
+
 
     try (java.sql.Statement statement = conn.wrapped.createStatement()) {
       if (isPersistent()) {
@@ -475,7 +477,7 @@ public class StarlakeSession {
       // Snowflake sets any CREATE SCHEMA as current schema
       if (List.of(StarlakeConnection.DatabaseType.SNOWFLAKE).contains(conn.type)) {
         try {
-          statement.executeUpdate("USE SCHEMA " + currentSchema);
+          statement.executeUpdate("USE SCHEMA " + currentCatalog + "." + currentSchema);
         } catch (Exception e) {
           LOGGER.warning("Failed to set current schema.");
         }

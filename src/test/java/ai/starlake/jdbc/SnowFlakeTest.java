@@ -283,4 +283,33 @@ public class SnowFlakeTest {
     }
   }
 
+  @Test
+  void testIssue12MoreComplex() throws SQLException {
+    String sessionId = "branch_database.my_db_session5";
+    try (Statement st = conn.createStatement()) {
+
+      // continue existing brt
+      st.execute("BRANCH START " + sessionId + " WITH persist=true");
+      st.executeUpdate("ALTER SESSION SET QUERY_TAG = 'starlake'");
+      st.executeUpdate("ALTER SESSION SET TIMESTAMP_TYPE_MAPPING = 'TIMESTAMP_LTZ'");
+      st.executeUpdate("ALTER SESSION SET QUOTED_IDENTIFIERS_IGNORE_CASE = true");
+      st.executeUpdate("CREATE SCHEMA IF NOT EXISTS sales_kpi");
+
+
+      st.execute("BRANCH START " + sessionId + " WITH persist=true");
+      st.executeUpdate("ALTER SESSION SET QUERY_TAG = 'starlake'");
+      st.executeUpdate("ALTER SESSION SET TIMESTAMP_TYPE_MAPPING = 'TIMESTAMP_LTZ'");
+      st.executeUpdate("ALTER SESSION SET QUOTED_IDENTIFIERS_IGNORE_CASE = true");
+      st.executeUpdate("USE SCHEMA sales_kpi");
+
+      st.executeUpdate("CREATE TABLE sales_kpi.byseller_kpi\n" + "    AS WITH mycte AS (\n"
+          + "        SELECT  o.amount\n" + "                , c.id\n"
+          + "                , CURRENT_TIMESTAMP() AS timestamp\n" + "        FROM sales.orders o\n"
+          + "            , sales.customers c\n" + "        WHERE o.customer_id = c.id )\n"
+          + "SELECT  id\n" + "        , Sum( amount ) AS sum\n" + "        , timestamp\n"
+          + "FROM mycte\n" + "GROUP BY    mycte.id\n" + "            , mycte.timestamp\n" + ";");
+
+    }
+  }
+
 }

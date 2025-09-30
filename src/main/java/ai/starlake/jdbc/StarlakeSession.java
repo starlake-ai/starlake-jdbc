@@ -437,20 +437,25 @@ public class StarlakeSession {
       if (isPersistent()) {
         statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS " + id);
 
+        // use row based tables on snowflake
+        String hybridStr = conn.type == StarlakeConnection.DatabaseType.SNOWFLAKE
+                ? " HYBRID"
+                : "";
+        
         //@formatter:off
-          final String SESSION_DDL_STR =
-                  "CREATE TABLE IF NOT EXISTS " + getMappingTable() + " (\n" +
-                  "    from_table       VARCHAR (256)\n" +
-                  "    , to_table       VARCHAR (256)\n" +
-                  "    , primary key(from_table)\n" +
-                  ")\n" +
-                  ";\n" +
-                  "CREATE TABLE IF NOT EXISTS " + getHistoryTable()  +" (\n" +
-                  "    update_timestamp         TIMESTAMP\n" +
-                  "    , sql_text               "+ conn.getClobType() +"\n" +
-                  "    , primary key (update_timestamp)\n" +
-                  ")\n" +
-                  ";";
+        final String SESSION_DDL_STR =
+              "CREATE" + hybridStr + " TABLE IF NOT EXISTS " + getMappingTable() + " (\n" +
+              "    from_table       VARCHAR (256)\n" +
+              "    , to_table       VARCHAR (256)\n" +
+              "    , primary key(from_table)\n" +
+              ")\n" +
+              ";\n" +
+              "CREATE" + hybridStr + " TABLE IF NOT EXISTS " + getHistoryTable()  +" (\n" +
+              "    update_timestamp         TIMESTAMP\n" +
+              "    , sql_text               "+ conn.getClobType() +"\n" +
+              "    , primary key (update_timestamp)\n" +
+              ")\n" +
+              ";";
         //@formatter:on
 
         try {

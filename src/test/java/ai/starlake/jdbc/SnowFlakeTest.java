@@ -171,8 +171,7 @@ public class SnowFlakeTest {
       st.executeUpdate("INSERT INTO b VALUES ('test2');");
       st.executeUpdate("INSERT INTO b VALUES ('test3');");
 
-
-      // Start a sessionSESSIONpublic
+      // Start a session
       st.execute("BRANCH START " + sessionId);
 
       // This should create a new session table

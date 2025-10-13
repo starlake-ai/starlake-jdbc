@@ -284,8 +284,10 @@ public class SnowFlakeTest {
 
   @Test
   void testIssue12MoreComplex() throws SQLException {
-    String sessionId = "branch_database.my_db_session5";
+    String sessionId = "branch_database.my_db_session7";
     try (Statement st = conn.createStatement()) {
+
+      // st.execute("DROP TABLE IF EXISTS sales_kpi.byseller_kpi");
 
       // continue existing brt
       st.execute("BRANCH START " + sessionId + " WITH persist=true");

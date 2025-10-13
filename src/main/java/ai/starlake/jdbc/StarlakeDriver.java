@@ -106,7 +106,8 @@ public class StarlakeDriver implements Driver {
     }
 
     if (!url.toLowerCase().startsWith(URL_SCHEME)) {
-      throw new SQLException("Invalid URL.");
+      // throw new SQLException("Invalid URL.");
+      return null;
     }
 
     String unwrappedUrlStr = "jdbc:" + url.substring(URL_SCHEME.length());

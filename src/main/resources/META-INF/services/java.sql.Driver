@@ -1,4 +1,5 @@
 # This file contains the fully qualified name of the JDBC driver class
 # for the Starlake database. This allows the JDBC DriverManager to
 # automatically discover and load the driver when needed.
+
 ai.starlake.jdbc.StarlakeDriver

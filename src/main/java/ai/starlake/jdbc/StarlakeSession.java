@@ -517,21 +517,21 @@ public class StarlakeSession {
       // @todo: skip when table has been dropped already by a DROP TABLE statement
       for (Table t : replacementTables.values()) {
         try {
-          statement.executeUpdate("DROP TABLE " + t.getFullyQualifiedName());
+          statement.executeUpdate("DROP TABLE IF EXISTS " + t.getFullyQualifiedName());
         } catch (SQLException e) {
           LOGGER.warning("Failed to drop " + t.getFullyQualifiedName());
         }
       }
 
       if (isPersistent() && tableMappingInsertStatement != null) {
-        statement.executeUpdate("DROP TABLE " + getMappingTable());
+        statement.executeUpdate("DROP TABLE IF EXISTS  " + getMappingTable());
       }
 
       if (isPersistent() && historyStatement != null) {
-        statement.executeUpdate("DROP TABLE " + getHistoryTable());
+        statement.executeUpdate("DROP TABLE IF EXISTS  " + getHistoryTable());
       }
 
-      statement.executeUpdate("DROP SCHEMA " + sessionId);
+      statement.executeUpdate("DROP SCHEMA IF EXISTS " + sessionId);
     } catch (SQLException e) {
       LOGGER.log(Level.SEVERE, "Failed to drop schema when dropping session", e);
     }

@@ -21,6 +21,7 @@ import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.SessionStatement;
+import net.sf.jsqlparser.statement.UseStatement;
 import net.sf.jsqlparser.statement.alter.Alter;
 import net.sf.jsqlparser.statement.create.schema.CreateSchema;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
@@ -262,6 +263,9 @@ public class StarlakeStatement implements Statement {
               && "schema".equalsIgnoreCase(((Drop) st).getName().getFullyQualifiedName())) {
             StarlakeSession.LOGGER.warning("Ignore schema DML statements.");
             return false;
+          } else if (st instanceof UseStatement && ((UseStatement) st).hasSchemaKeyword() ) {
+              StarlakeSession.LOGGER.warning("Ignore schema USE statements.");
+              return false;
           } else {
             return wrappedExecutor.execute(rewrittenSql);
           }

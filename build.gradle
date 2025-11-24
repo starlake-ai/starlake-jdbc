@@ -57,7 +57,7 @@ dependencies {
     // some JDBC Drivers
     testImplementation 'com.h2database:h2:+'
 
-    testImplementation 'org.duckdb:duckdb_jdbc:1.3.+'
+    testImplementation 'org.duckdb:duckdb_jdbc:+'
     testImplementation 'net.snowflake:snowflake-jdbc:+'
 
     // Java Doc in XML Format

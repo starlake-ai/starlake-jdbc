@@ -21,6 +21,8 @@ import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.SessionStatement;
+import net.sf.jsqlparser.statement.SetStatement;
+import net.sf.jsqlparser.statement.StatementVisitorAdapter;
 import net.sf.jsqlparser.statement.UseStatement;
 import net.sf.jsqlparser.statement.alter.Alter;
 import net.sf.jsqlparser.statement.create.schema.CreateSchema;
@@ -42,6 +44,51 @@ public class StarlakeStatement implements Statement {
     this.connection = connection;
     this.wrapped = wrapped;
   }
+
+  private StatementVisitorAdapter<Boolean> objectsVisitor = new StatementVisitorAdapter<>() {
+    @Override
+    public <S> Boolean visit(CreateSchema createSchema, S context) {
+      return connection.currentSession.dbObjects.canCreate(createSchema.getSchemaName(),
+          DBObjects.ObjectType.SCHEMA);
+    }
+
+    @Override
+    public <S> Boolean visit(UseStatement use, S context) {
+      if (connection.currentSession.dbObjects.isCreated(use.getName(),
+          DBObjects.ObjectType.SCHEMA)) {
+        connection.currentSession.metaData.setCurrentSchemaName(use.getName());
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    @Override
+    public <S> Boolean visit(SetStatement set, S context) {
+      if ("SCHEMA".equalsIgnoreCase(String.valueOf(set.getName()))) {
+        String name = String.valueOf(set.getExpressions(0));
+        if (connection.currentSession.dbObjects.isCreated(name, DBObjects.ObjectType.SCHEMA)) {
+          connection.currentSession.metaData.setCurrentSchemaName(name);
+          return true;
+        } else {
+          return false;
+        }
+      } else {
+        return null;
+      }
+    }
+
+    @Override
+    public <S> Boolean visit(Drop drop, S context) {
+      if ("SCHEMA".equalsIgnoreCase(drop.getType())) {
+        return connection.currentSession.dbObjects.canCreate(drop.getName().getFullyQualifiedName(),
+            DBObjects.ObjectType.SCHEMA);
+      } else {
+        return null;
+      }
+    }
+  };
+
 
   @FunctionalInterface
   private interface ResultSetExecutor {
@@ -67,13 +114,16 @@ public class StarlakeStatement implements Statement {
         if (connection.currentSession != null) {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
 
-          if (st instanceof CreateSchema || st instanceof Drop
-              && "schema".equalsIgnoreCase(((Drop) st).getName().getFullyQualifiedName())) {
+          Boolean isSchema = st.accept(objectsVisitor, connection.getMetaData());
+          if (isSchema == null || !isSchema) {
+            return new StarlakeResultSet(this, wrappedExecutor.execute(rewrittenSql));
+          } else {
             StarlakeSession.LOGGER.warning("Ignore schema DML statements.");
             return new StarlakeVirtualResultSet("Records", "0");
-          } else {
-            return new StarlakeResultSet(this, wrappedExecutor.execute(rewrittenSql));
           }
+
+
+
         } else {
           return new StarlakeResultSet(this, wrappedExecutor.execute(unpipedSql));
         }
@@ -122,12 +172,13 @@ public class StarlakeStatement implements Statement {
         if (connection.currentSession != null) {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
           T result;
-          if (st instanceof CreateSchema || st instanceof Drop
-              && "schema".equalsIgnoreCase(((Drop) st).getName().getFullyQualifiedName())) {
+
+          Boolean isSchema = st.accept(objectsVisitor, connection.getMetaData());
+          if (isSchema == null || !isSchema) {
+            result = wrappedExecutor.execute(rewrittenSql);
+          } else {
             StarlakeSession.LOGGER.warning("Ignore schema DML statements.");
             result = (T) Integer.valueOf(-1);
-          } else {
-            result = wrappedExecutor.execute(rewrittenSql);
           }
 
           // Update metadata when tables have been changed
@@ -259,15 +310,12 @@ public class StarlakeStatement implements Statement {
       } else {
         if (connection.currentSession != null) {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
-          if (st instanceof CreateSchema || st instanceof Drop
-              && "schema".equalsIgnoreCase(((Drop) st).getName().getFullyQualifiedName())) {
+          Boolean isSchema = st.accept(objectsVisitor, connection.getMetaData());
+          if (isSchema == null || !isSchema) {
+            return wrappedExecutor.execute(rewrittenSql);
+          } else {
             StarlakeSession.LOGGER.warning("Ignore schema DML statements.");
             return false;
-          } else if (st instanceof UseStatement && ((UseStatement) st).hasSchemaKeyword() ) {
-              StarlakeSession.LOGGER.warning("Ignore schema USE statements.");
-              return false;
-          } else {
-            return wrappedExecutor.execute(rewrittenSql);
           }
         } else {
           return wrappedExecutor.execute(unpipedSql);

@@ -882,5 +882,44 @@ public class StarlakeSessionTest {
     }
   }
 
+  @Test
+  void schemaWithinSessionTest() throws ClassNotFoundException, SQLException {
+    final String sessionId = "session1";
+    try (Statement st = conn.createStatement()) {
+      // is a Starlake Session aware connection
+      Assertions.assertInstanceOf(StarlakeConnection.class, conn);
+
+      // Start a session
+      st.execute("SESSION START " + sessionId + " WITH persist=true");
+      Assertions.assertEquals(Status.STARTED, conn.currentSession.getStatus());
+
+      st.executeUpdate("CREATE SCHEMA test4;");
+      assertThatH2SchemaNotExists("test4");
+
+      st.executeUpdate("SET SCHEMA test4;");
+      assertThatH2SchemaNotExists("test4");
+
+      st.executeUpdate("CREATE TABLE IF NOT EXISTS f (c VARCHAR(40));");
+      st.executeUpdate("INSERT INTO f VALUES('test1'); ");
+      try (ResultSet rs = st.executeQuery("SELECT * FROM f")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test1", rs.getString(1));
+        } else {
+          Assertions.fail("No records returned.");
+        }
+      }
+      st.execute("SESSION APPLY " + sessionId + " WITH persist=true");
+      assertThatH2SchemaExists("test4");
+
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test4.f")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test1", rs.getString(1));
+        } else {
+          Assertions.fail("No records returned.");
+        }
+      }
+    }
+  }
+
 
 }

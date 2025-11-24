@@ -84,7 +84,7 @@ public class StarlakeSession {
   private final Instant startInstant;
   private Instant endInstant;
 
-
+  public final DBObjects dbObjects = new DBObjects();
 
   PreparedStatement historyStatement = null;
   PreparedStatement tableMappingDeleteStatement = null;
@@ -438,10 +438,8 @@ public class StarlakeSession {
         statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS " + id);
 
         // use row based tables on snowflake
-        String hybridStr = conn.type == StarlakeConnection.DatabaseType.SNOWFLAKE
-                ? " HYBRID"
-                : "";
-        
+        String hybridStr = conn.type == StarlakeConnection.DatabaseType.SNOWFLAKE ? " HYBRID" : "";
+
         //@formatter:off
         final String SESSION_DDL_STR =
               "CREATE" + hybridStr + " TABLE IF NOT EXISTS " + getMappingTable() + " (\n" +
@@ -513,7 +511,7 @@ public class StarlakeSession {
     this.endInstant = Instant.now();
 
 
-    try (java.sql.Statement statement = conn.createStatement()) {
+    try (java.sql.Statement statement = conn.wrapped.createStatement()) {
       // @todo: skip when table has been dropped already by a DROP TABLE statement
       for (Table t : replacementTables.values()) {
         try {

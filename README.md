@@ -103,9 +103,31 @@ BRANCH DROP;
 SELECT Count(*) FROM a INNER JOIN b USING(test);
 ```
 
+## SCHEMA branching
+```sql
+-- BRANCH ------------------------------------------------------------------------
+BRANCH START session1;
+
+CREATE SCHEMA test4;                -- ommit physical creation
+SET SCHEMA test4;                   -- now `test4` is current schema,
+                                    -- even when there is no schema `test4`
+CREATE TABLE f (c VARCHAR(40));     -- effectively meaning `test4.f`
+INSERT INTO f VALUES('test1');
+
+SELECT * FROM f;                    -- works on BRANCHED table `session1.f`
+SELECT * FROM test4.f;              -- also works on BRANCHED table `session1.f`
+
+BRANCH APPLY session1;              -- implement the branched changes
+                                    -- creating schema `test4` and table `test4.f`           
+
+-- PHYSICAL ----------------------------------------------------------------------
+SELECT * FROM f;                    -- works on PHYSICAL table `test4.f`
+SELECT * FROM test4.f;              -- also works on PHYSICAL table `test4.f`
+```
+
 ## Using JDBC and wrapping connections
 ```java
-Class.forName("ai.starlake.jdbc.StarlakeDriver");staging
+Class.forName("ai.starlake.jdbc.StarlakeDriver");
 
 // Wrap an H2 in memory DB
 Driver driver = DriverManager.getDriver("jdbc:starlake:h2:test");
@@ -115,29 +137,29 @@ final String branchId = "branch1";
 
 try (Statement st = conn.createStatement()) {
 
-// is a Starlake Session aware connection
-Assertions.assertInstanceOf(StarlakeConnection.class, conn);
-
-// Start a branch
-st.execute("BRANCH START " + branchId);
-Assertions.assertEquals(Status.STARTED,
-    ((StarlakeConnection) conn).currentSession.getStatus());
-
-// Create a table without touching the current schema "PUBLIC"
-st.execute("CREATE TABLE a (b VARCHAR(1));");
-
-assertThatH2SchemaTableNotExists("public", "a");
-assertThatH2SessionTableExists(branchId, "a");
-
-// Apply the branch by creating the table in schema "PUBLIC"
-st.execute("BRANCH APPLY branch1;");
-
-assertThatH2SchemaTableExists("public", "a");
-assertThatH2SessionNotExists(branchId);
-
-// Confirm branch status
-Assertions.assertEquals(Status.APPLIED,
-    ((StarlakeConnection) conn).currentSession.getStatus());
+    // is a Starlake Session aware connection
+    Assertions.assertInstanceOf(StarlakeConnection.class, conn);
+    
+    // Start a branch
+    st.execute("BRANCH START " + branchId);
+    Assertions.assertEquals(Status.STARTED,
+        ((StarlakeConnection) conn).currentSession.getStatus());
+    
+    // Create a table without touching the current schema "PUBLIC"
+    st.execute("CREATE TABLE a (b VARCHAR(1));");
+    
+    assertThatH2SchemaTableNotExists("public", "a");
+    assertThatH2SessionTableExists(branchId, "a");
+    
+    // Apply the branch by creating the table in schema "PUBLIC"
+    st.execute("BRANCH APPLY branch1;");
+    
+    assertThatH2SchemaTableExists("public", "a");
+    assertThatH2SessionNotExists(branchId);
+    
+    // Confirm branch status
+    Assertions.assertEquals(Status.APPLIED,
+        ((StarlakeConnection) conn).currentSession.getStatus());
 }
 ```
 

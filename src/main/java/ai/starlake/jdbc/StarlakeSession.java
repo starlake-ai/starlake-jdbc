@@ -114,7 +114,7 @@ public class StarlakeSession {
       new FromItemVisitorAdapter<>(modifyingTableSelectVisitor, modifyingTableExpressionVisitor) {
         @Override
         public <S> Boolean visit(Table table, S context) {
-          String originalName = table.getFullyQualifiedName();
+          String originalName = table.setUnsetCatalogAndSchema(metaData.getCurrentCatalogName(), metaData.getCurrentSchemaName()).getFullyQualifiedName();
           if (!replacementTables.containsKey(originalName)) {
             Table replacementTable =
                 new Table(table.withSchemaName(sessionId).getFullyQualifiedName());
@@ -581,13 +581,13 @@ public class StarlakeSession {
 
       if (!(st instanceof CreateTable)) {
         for (Map.Entry<String, Table> e : replacementTables.entrySet()) {
-          metaData.addSynonym(e.getKey(), e.getValue().getFullyQualifiedName());
+          metaData.addSynonym(e.getKey(), e.getValue().setUnsetCatalogAndSchema(metaData.getCurrentCatalogName(), metaData.getCurrentSchemaName()).getFullyQualifiedName());
         }
       }
 
       if (st instanceof Drop) {
         for (Map.Entry<String, Table> e : replacementTables.entrySet()) {
-          metaData.dropSynonym(e.getKey(), e.getValue().getFullyQualifiedName());
+          metaData.dropSynonym(e.getKey(), e.getValue().setUnsetCatalogAndSchema(metaData.getCurrentCatalogName(), metaData.getCurrentSchemaName()).getFullyQualifiedName());
         }
       }
 

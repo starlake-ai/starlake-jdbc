@@ -1,0 +1,17 @@
+{
+  "resources": {
+    "includes": [
+      {
+        "pattern": "META-INF/services/java.sql.Driver"
+      },
+      {
+        "pattern": ".*\\.properties"
+      },
+      {
+        "pattern": ".*\\.xml"
+      }
+    ]
+  },
+  "bundles": []
+}
+

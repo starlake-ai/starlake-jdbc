@@ -26,6 +26,9 @@ plugins {
     id "se.bjurr.gitchangelog.git-changelog-gradle-plugin" version "latest.release"
     id "com.nwalsh.gradle.saxon.saxon-gradle" version "latest.release"
     id 'biz.aQute.bnd.builder' version "latest.release"
+
+    // GraalVM Native Image support
+    id 'org.graalvm.buildtools.native' version '0.10.3'
 }
 
 repositories {
@@ -46,6 +49,9 @@ dependencies {
     implementation('com.github.jsqlparser:jsqlparser:+'){ changing = true }
     implementation('ai.starlake.jsqltranspiler:jsqltranspiler:+') { changing = true }
 
+    // GraalVM Native Image SDK (provided at compile time)
+    compileOnly 'org.graalvm.sdk:graal-sdk:23.1.1'
+    compileOnly 'org.graalvm.nativeimage:svm:23.1.1'
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.11.4'
     testImplementation 'org.junit.jupiter:junit-jupiter-engine:5.11.4'
@@ -458,6 +464,28 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.withType(Test).configureEach {
     maxParallelForks = 10
+}
+
+// GraalVM Native Image Configuration
+graalvmNative {
+    binaries {
+        main {
+            imageName = 'starlake-jdbc-native'
+            mainClass = 'ai.starlake.jdbc.NativeImageBridge'
+
+            buildArgs.add('--no-fallback')
+            buildArgs.add('--shared')  // Build as shared library for ODBC wrapper
+            buildArgs.add('--initialize-at-build-time=ai.starlake.jdbc')
+            buildArgs.add('-H:+ReportExceptionStackTraces')
+            buildArgs.add('-H:+PrintClassInitialization')
+            buildArgs.add('--verbose')
+
+            // Allow reflection for JDBC drivers
+            buildArgs.add('--initialize-at-run-time=org.h2.Driver')
+            buildArgs.add('--initialize-at-run-time=org.duckdb.DuckDBDriver')
+            buildArgs.add('--initialize-at-run-time=net.snowflake.client.jdbc.SnowflakeDriver')
+        }
+    }
 }
 
 tasks.register('gitChangelogTask', GitChangelogTask) {

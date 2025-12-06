@@ -17,13 +17,12 @@
 package ai.starlake.jdbc;
 
 import org.assertj.core.api.Assertions;
-import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 
-import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -37,10 +36,10 @@ import java.util.logging.Logger;
 @Disabled
 public class SnowFlakeTest {
   private final static Logger LOGGER = Logger.getLogger(SnowFlakeTest.class.getName());
-  public static Connection conn;
+  public StarlakeConnection conn;
 
-  @BeforeAll
-  static void init() {
+  @BeforeEach
+  void init() {
     try {
       Class.forName("net.snowflake.client.jdbc.SnowflakeDriver");
       Class.forName("ai.starlake.jdbc.StarlakeDriver");
@@ -67,7 +66,7 @@ public class SnowFlakeTest {
     try {
       driver = DriverManager.getDriver(url);
       Properties info = new Properties();
-      conn = driver.connect(url, info);
+      conn = (StarlakeConnection) driver.connect(url, info);
     } catch (SQLException ex) {
       LOGGER.log(Level.SEVERE, "Failed to connect to DB.", ex);
       throw new RuntimeException(ex);
@@ -121,6 +120,7 @@ public class SnowFlakeTest {
   void testClonedDMLDifferentSchema() throws SQLException {
     final String sessionId = "sessionB";
     try (Statement st = conn.createStatement()) {
+      st.executeUpdate("DROP SCHEMA IF EXISTS " + sessionId + " CASCADE");
       st.executeUpdate("DROP TABLE IF EXISTS a;");
 
       // create table and insert values
@@ -206,6 +206,8 @@ public class SnowFlakeTest {
   void testUnsupportedStatementsTable() throws SQLException {
     String sessionId = "sessionC";
     try (Statement st = conn.createStatement()) {
+      st.executeUpdate("DROP SCHEMA IF EXISTS " + sessionId + " CASCADE");
+
       st.executeUpdate("ALTER SESSION SET QUOTED_IDENTIFIERS_IGNORE_CASE = true");
       st.execute("BRANCH START " + sessionId + " WITH persist=true");
       st.executeUpdate("ALTER SESSION SET QUOTED_IDENTIFIERS_IGNORE_CASE = true");
@@ -217,8 +219,7 @@ public class SnowFlakeTest {
   void testIssue12Clean() throws SQLException {
     String sessionId = "branch_database.my_db_session3";
     try (Statement st = conn.createStatement()) {
-      // clean any stale remains
-      st.execute("BRANCH DROP " + sessionId + " WITH persist=true");
+      st.executeUpdate("DROP SCHEMA IF EXISTS " + sessionId + " CASCADE");
 
       // start new branch
       st.execute("BRANCH START " + sessionId + " WITH persist=true");
@@ -252,6 +253,7 @@ public class SnowFlakeTest {
   void testIssue12Dirty() throws SQLException {
     String sessionId = "branch_database.my_db_session1";
     try (Statement st = conn.createStatement()) {
+      st.executeUpdate("DROP SCHEMA IF EXISTS " + sessionId + " CASCADE");
 
       // continue existing brt
       st.execute("BRANCH START " + sessionId + " WITH persist=true");
@@ -287,7 +289,7 @@ public class SnowFlakeTest {
     String sessionId = "branch_database.my_db_session7";
     try (Statement st = conn.createStatement()) {
 
-      // st.execute("DROP TABLE IF EXISTS sales_kpi.byseller_kpi");
+      st.executeUpdate("DROP SCHEMA IF EXISTS " + sessionId + " CASCADE");
 
       // continue existing brt
       st.execute("BRANCH START " + sessionId + " WITH persist=true");
@@ -313,4 +315,61 @@ public class SnowFlakeTest {
     }
   }
 
+  @Test
+  void explicitSchemaTest() throws ClassNotFoundException, SQLException {
+    try (Statement st = conn.createStatement()) {
+      st.executeUpdate("DROP SCHEMA IF EXISTS test4;");
+      st.executeUpdate("CREATE SCHEMA test4;");
+      st.executeUpdate("USE SCHEMA test4;");
+      st.executeUpdate("CREATE TABLE IF NOT EXISTS f (c VARCHAR(40));");
+      st.executeUpdate("INSERT INTO f VALUES('test1'); ");
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test4.f")) {
+        if (rs.next()) {
+          org.junit.jupiter.api.Assertions.assertEquals("test1", rs.getString(1));
+        } else {
+          org.junit.jupiter.api.Assertions.fail("No records returned.");
+        }
+      }
+    }
+  }
+
+  @Test
+  void explicitSchemaWithinSessionTest() throws ClassNotFoundException, SQLException {
+    final String sessionId = "session1";
+    try (Statement st = conn.createStatement()) {
+      // is a Starlake Session aware connection
+      org.junit.jupiter.api.Assertions.assertInstanceOf(StarlakeConnection.class, conn);
+
+      st.executeUpdate("DROP SCHEMA IF EXISTS " + sessionId + " CASCADE");
+      st.executeUpdate("DROP SCHEMA IF EXISTS test4;");
+
+      // Start a session
+      st.execute("SESSION START " + sessionId + " WITH persist=true,keep=FALSE");
+      org.junit.jupiter.api.Assertions.assertEquals(StarlakeSession.Status.STARTED,
+          conn.currentSession.getStatus());
+
+      st.executeUpdate("CREATE SCHEMA test4;");
+
+      st.executeUpdate("USE SCHEMA test4;");
+
+      st.executeUpdate("CREATE TABLE IF NOT EXISTS f (c VARCHAR(40));");
+      st.executeUpdate("INSERT INTO f VALUES('test1'); ");
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test4.f")) {
+        if (rs.next()) {
+          org.junit.jupiter.api.Assertions.assertEquals("test1", rs.getString(1));
+        } else {
+          org.junit.jupiter.api.Assertions.fail("No records returned.");
+        }
+      }
+      st.execute("SESSION APPLY " + sessionId + " WITH persist=true");
+
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test4.f")) {
+        if (rs.next()) {
+          org.junit.jupiter.api.Assertions.assertEquals("test1", rs.getString(1));
+        } else {
+          org.junit.jupiter.api.Assertions.fail("No records returned.");
+        }
+      }
+    }
+  }
 }

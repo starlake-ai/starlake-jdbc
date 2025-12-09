@@ -9,6 +9,7 @@ buildscript {
 
 plugins {
     id 'java-library'
+    id "com.vanniktech.maven.publish" version "latest.release"
     id 'com.gradleup.shadow' version 'latest.release'
     id 'maven-publish'
     id 'signing'
@@ -29,10 +30,10 @@ plugins {
 }
 
 repositories {
+    gradlePluginPortal()
     mavenCentral()
-    mavenLocal()
 
-    //Sonatype
+    // Snapshots
     maven {
         url = uri('https://central.sonatype.com/repository/maven-snapshots/')
     }
@@ -43,9 +44,8 @@ configurations {
 }
 
 dependencies {
-    implementation('com.github.jsqlparser:jsqlparser:+'){ changing = true }
+    implementation('com.manticore-projects.jsqlformatter:jsqlparser:+'){ changing = true }
     implementation('ai.starlake.jsqltranspiler:jsqltranspiler:+') { changing = true }
-
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.11.4'
     testImplementation 'org.junit.jupiter:junit-jupiter-engine:5.11.4'
@@ -66,7 +66,7 @@ dependencies {
 
 configurations.configureEach {
     resolutionStrategy.eachDependency { DependencyResolveDetails details ->
-        if (details.requested.group == 'com.github.jsqlparser') {
+        if (details.requested.group == 'com.manticore-projects.jsqlformatter') {
             // Check for updates every build
             resolutionStrategy.cacheChangingModulesFor 30, 'seconds'
         }
@@ -102,9 +102,10 @@ def getVersion = { boolean considerSnapshot ->
         snapshot = "-SNAPSHOT"
     }
 
-    return patch != null
-            ? "${major}.${minor}.${patch}${snapshot}"
-            : "${major}.${minor}${snapshot}"
+    return "${major}.${minor}" +
+            (patch != null ? ".${patch}" : "") +
+            (build != null ? ".${build}" : "") +
+            snapshot
 }
 
 
@@ -161,7 +162,7 @@ tasks.withType(JavaCompile).configureEach {
 
 java {
     withSourcesJar()
-    withJavadocJar()
+    //withJavadocJar()
 
     sourceCompatibility = '11'
     targetCompatibility = '11'
@@ -400,55 +401,76 @@ tasks.withType(Checkstyle).configureEach {
     }
 }
 
-publishing {
-    publications {
-        mavenJava(MavenPublication) {
-            artifactId 'starlakejdbc'
-            from(components.java)
-            versionMapping {
-                usage('java-api') {
-                    fromResolutionOf('runtimeClasspath')
-                }
-                usage('java-runtime') {
-                    fromResolutionResult()
-                }
-            }
+mavenPublishing {
+    coordinates(group, "starlakejdbc", version)
 
-            pom {
-                name = 'Starlake JDBC Proxy driver'
-                description = 'The JDBC Proxy for staging and snapshotting of DML and DDL'
-                url = 'https://github.com/starlake-ai/starlake-jdbc'
-                licenses {
-                    license {
-                        name = 'Apache License'
-                        url = 'https://www.apache.org/licenses/LICENSE-2.0'
-                    }
-                }
-                developers {
-                    developer {
-                        id = 'are'
-                        name = 'Andreas Reichel'
-                        email = 'andreas@manticore-projects.com'
-                    }
-                }
+    pom {
+        name = 'Starlake JDBC Proxy driver'
+        description = 'The JDBC Proxy for staging and snapshotting of DML and DDL'
+        url = 'https://github.com/starlake-ai/starlake-jdbc'
+        licenses {
+            license {
+                name = 'Apache License'
+                url = 'https://www.apache.org/licenses/LICENSE-2.0'
             }
         }
-    }
-    repositories {
-        maven {
-            // Username and Password are defined in ~/.gradle/gradle.properties
-            name "ossrh"
-            url version.toString().endsWith('-SNAPSHOT')
-                    ? "https://central.sonatype.com/repository/maven-snapshots/"
-                    : "https://central.sonatype.com/repository/maven-releases"
-            credentials(PasswordCredentials)
+        developers {
+            developer {
+                id = 'are'
+                name = 'Andreas Reichel'
+                email = 'andreas@manticore-projects.com'
+            }
+        }
+        scm {
+            connection = 'scm:git:https://github.com/starlake-ai/starlake-jdbc.git'
+            developerConnection = 'scm:git:ssh://git@github.com:starlake-ai/starlake-jdbc.git'
+            url = 'https://starlake.ai'
         }
     }
 }
 
+// Fix signing task dependencies
+tasks.withType(AbstractPublishToMaven).configureEach {
+    dependsOn(tasks.withType(Sign))
+}
+
 signing {
     required { !version.endsWith("SNAPSHOT") && gradle.taskGraph.hasTask("publish") }
-    sign publishing.publications.mavenJava
+}
+
+// Resolve dynamic dependencies to concrete versions in POM
+publishing {
+    publications {
+        configureEach {
+            if (it instanceof MavenPublication) {
+                // Suppress the warning about Maven-incompatible version notation
+                it.suppressPomMetadataWarningsFor('runtimeElements')
+
+                it.pom.withXml {
+                    def runtimeDeps = project.configurations.runtimeClasspath
+                            .resolvedConfiguration
+                            .firstLevelModuleDependencies
+
+                    def depsNode = asNode().dependencies?.dependency
+
+                    depsNode?.each { depNode ->
+                        def groupId = depNode.groupId.text()
+                        def artifactId = depNode.artifactId.text()
+
+                        // Find the resolved dependency
+                        def resolved = runtimeDeps.find {
+                            it.moduleGroup == groupId && it.moduleName == artifactId
+                        }
+
+                        if (resolved != null) {
+                            // Replace dynamic version (+, latest.release, etc.) with resolved version
+                            depNode.version[0].value = resolved.moduleVersion
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 tasks.withType(JavaCompile).configureEach {

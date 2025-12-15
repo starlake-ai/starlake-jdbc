@@ -1,0 +1,1 @@
+RELEASE=1 gradle clean publish --no-build-cache  --refresh-dependencies

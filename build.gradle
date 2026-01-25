@@ -39,40 +39,6 @@ repositories {
     }
 }
 
-configurations {
-    xmlDoclet
-}
-
-dependencies {
-    implementation('com.manticore-projects.jsqlformatter:jsqlparser:+'){ changing = true }
-    implementation('ai.starlake.jsqltranspiler:jsqltranspiler:+') { changing = true }
-
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.11.4'
-    testImplementation 'org.junit.jupiter:junit-jupiter-engine:5.11.4'
-    testImplementation 'org.junit.jupiter:junit-jupiter-params:5.11.4'
-
-    // we do need better matchers
-    testImplementation("org.assertj:assertj-core:+")
-
-    // some JDBC Drivers
-    testImplementation 'com.h2database:h2:+'
-
-    testImplementation 'org.duckdb:duckdb_jdbc:+'
-    testImplementation 'net.snowflake:snowflake-jdbc:+'
-
-    // Java Doc in XML Format
-    xmlDoclet 'com.manticore-projects.tools:xml-doclet:+'
-}
-
-configurations.configureEach {
-    resolutionStrategy.eachDependency { DependencyResolveDetails details ->
-        if (details.requested.group == 'com.manticore-projects.jsqlformatter') {
-            // Check for updates every build
-            resolutionStrategy.cacheChangingModulesFor 30, 'seconds'
-        }
-    }
-}
-
 def getVersion = { boolean considerSnapshot ->
     Integer major = 0
     Integer minor = 0
@@ -114,6 +80,43 @@ def getVersion = { boolean considerSnapshot ->
 version = getVersion( !System.getenv("RELEASE") )
 group = 'ai.starlake.jdbc'
 description = 'Starlake JDBC Proxy Driver'
+
+
+configurations {
+    xmlDoclet
+}
+
+dependencies {
+    def useSnapshot = version.endsWith('-SNAPSHOT')
+    implementation("com.manticore-projects.jsqlformatter:jsqlparser:${useSnapshot ? '+' : 'latest.release'}"){ changing = useSnapshot }
+    implementation("ai.starlake.jsqltranspiler:jsqltranspiler:${useSnapshot ? '+' : 'latest.release'}") { changing = useSnapshot }
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.11.4'
+    testImplementation 'org.junit.jupiter:junit-jupiter-engine:5.11.4'
+    testImplementation 'org.junit.jupiter:junit-jupiter-params:5.11.4'
+
+    // we do need better matchers
+    testImplementation("org.assertj:assertj-core:+")
+
+    // some JDBC Drivers
+    testImplementation 'com.h2database:h2:+'
+
+    testImplementation 'org.duckdb:duckdb_jdbc:+'
+    testImplementation 'net.snowflake:snowflake-jdbc:+'
+
+    // Java Doc in XML Format
+    xmlDoclet 'com.manticore-projects.tools:xml-doclet:+'
+}
+
+configurations.configureEach {
+    resolutionStrategy.eachDependency { DependencyResolveDetails details ->
+        if (details.requested.group == 'com.manticore-projects.jsqlformatter') {
+            // Check for updates every build
+            resolutionStrategy.cacheChangingModulesFor 30, 'seconds'
+        }
+    }
+}
+
 
 
 tasks.register('generateBuildInfo') {

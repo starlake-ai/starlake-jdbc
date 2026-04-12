@@ -61,3 +61,4 @@ else
 fi
 
 echo "check your release at https://central.sonatype.com/publishing/deployments"
+

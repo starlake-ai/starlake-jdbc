@@ -33,9 +33,11 @@ repositories {
     gradlePluginPortal()
     mavenCentral()
 
-    // Snapshots
-    maven {
-        url = uri('https://central.sonatype.com/repository/maven-snapshots/')
+    // Snapshots only when not releasing
+    if (!System.getenv("RELEASE")) {
+        maven {
+            url = uri('https://central.sonatype.com/repository/maven-snapshots/')
+        }
     }
 }
 

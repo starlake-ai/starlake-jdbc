@@ -180,9 +180,8 @@ public class StarlakeConnection implements Connection {
         return String.format("CREATE TABLE %s SHALLOW CLONE %s;", tableName, sourceName);
 
       case BIGQUERY:
-        // BigQuery supports clone via copy (as of 2022+)
-        // Uses CREATE SNAPSHOT TABLE for logical clone
-        return String.format("CREATE SNAPSHOT TABLE %s CLONE %s;", tableName, sourceName);
+        // BigQuery supports zero-copy writable cloning
+        return String.format("CREATE TABLE %s CLONE %s;", tableName, sourceName);
 
       default:
         return String.format("CREATE TABLE %s AS SELECT * FROM %s;", tableName, sourceName);

@@ -245,9 +245,10 @@ public class StarlakeConnection implements Connection {
   @Override
   public void close() throws SQLException {
     if (currentSession != null) {
-      if (currentSession.getStatus() == Status.STARTED && !StarlakeSession.isTrue(currentSession.options, "keep")) {
-        LOGGER.warning("On closing the connection, an active session " + currentSession.getSessionId()
-            + " has been found. Will DROP it.");
+      if (currentSession.getStatus() == Status.STARTED
+          && !StarlakeSession.isTrue(currentSession.options, "keep")) {
+        LOGGER.warning("On closing the connection, an active session "
+            + currentSession.getSessionId() + " has been found. Will DROP it.");
         currentSession.drop(currentSession.options);
       }
       sessions.remove(currentSession.getSessionId());

@@ -17,7 +17,7 @@ Run and test all your DDL/DML statements in a sandboxed branch before applying t
   BRANCH START [branchId] [ WITH key=value (, key=value)* ]
   BRANCH APPLY [branchId] [ WITH key=value (, key=value)* ]
   BRANCH DROP  [branchId] [ WITH key=value (, key=value)* ]
-  BRANCH DESCRIBE [branchId] 
+  BRANCH DESCRIBE [branchId]
   BRANCH STATUS [branchId]
   ```
 
@@ -118,7 +118,7 @@ SELECT * FROM f;                    -- works on BRANCHED table `session1.f`
 SELECT * FROM test4.f;              -- also works on BRANCHED table `session1.f`
 
 BRANCH APPLY session1;              -- implement the branched changes
-                                    -- creating schema `test4` and table `test4.f`           
+                                    -- creating schema `test4` and table `test4.f`
 
 -- PHYSICAL ----------------------------------------------------------------------
 SELECT * FROM f;                    -- works on PHYSICAL table `test4.f`
@@ -139,24 +139,24 @@ try (Statement st = conn.createStatement()) {
 
     // is a Starlake Session aware connection
     Assertions.assertInstanceOf(StarlakeConnection.class, conn);
-    
+
     // Start a branch
     st.execute("BRANCH START " + branchId);
     Assertions.assertEquals(Status.STARTED,
         ((StarlakeConnection) conn).currentSession.getStatus());
-    
+
     // Create a table without touching the current schema "PUBLIC"
     st.execute("CREATE TABLE a (b VARCHAR(1));");
-    
+
     assertThatH2SchemaTableNotExists("public", "a");
     assertThatH2SessionTableExists(branchId, "a");
-    
+
     // Apply the branch by creating the table in schema "PUBLIC"
     st.execute("BRANCH APPLY branch1;");
-    
+
     assertThatH2SchemaTableExists("public", "a");
     assertThatH2SessionNotExists(branchId);
-    
+
     // Confirm branch status
     Assertions.assertEquals(Status.APPLIED,
         ((StarlakeConnection) conn).currentSession.getStatus());

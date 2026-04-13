@@ -240,7 +240,7 @@ public class StarlakeSession {
         }
 
         JdbcCatalog catalog = metaData.get(catalogName);
-        if (catalog != null && !catalog.containsKey(schemaName)) {
+        if (catalog != null && catalog.containsKey(schemaName)) {
           catalog.remove(schemaName);
         }
       }

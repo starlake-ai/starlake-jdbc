@@ -617,8 +617,8 @@ public class StarlakeConnection implements Connection {
           if (currentSession.getStartInstant() != null) {
             data.add(new Object[] {"start_timestamp", currentSession.getStartInstant().toString()});
           }
-          if (currentSession.getStartInstant() != null) {
-            data.add(new Object[] {"end_timestamp", currentSession.getStartInstant()});
+          if (currentSession.getEndInstant() != null) {
+            data.add(new Object[] {"end_timestamp", currentSession.getEndInstant()});
           }
           for (Map.Entry<String, String> e : currentSession.options.entrySet()) {
             data.add(new Object[] {e.getKey(), e.getValue()});
@@ -629,6 +629,11 @@ public class StarlakeConnection implements Connection {
       case DESCRIBE:
         describeSession(st.getOptions());
 
+        if (currentSession == null) {
+          data.add(new Object[] {Instant.now(), "No current session"});
+          return new StarlakeVirtualResultSet(new String[] {"UPDATE_TIMESTAMP", "SQL_TEXT"},
+              new Class[] {Instant.class, String.class}, data.toArray(new Object[data.size()][]));
+        }
         for (Map.Entry<Instant, String> e : currentSession.getStatements().entrySet()) {
           data.add(new Object[] {e.getKey(), e.getValue()});
         }
@@ -714,9 +719,9 @@ public class StarlakeConnection implements Connection {
           StarlakeSession session = StarlakeSession.getPersistingSession(this, id, options);
           if (session != null && session.getStatus() == Status.STARTED) {
             session.drop(options);
-            LOGGER.info("Session dropped: " + currentSession.getSessionId());
+            LOGGER.info("Session dropped: " + session.getSessionId());
           } else {
-            LOGGER.warning("No running Session not found: " + id);
+            LOGGER.warning("No running Session found: " + id);
           }
         } catch (Exception ex) {
           LOGGER.warning("Session not found: " + id);

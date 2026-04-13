@@ -122,7 +122,7 @@ public class StarlakeDriver implements Driver {
         wrapped = (Driver) clazz.getDeclaredConstructor().newInstance();
 
         if (wrapped.acceptsURL(unwrappedUrlStr)) {
-          return wrapped.connect(url, info);
+          return new StarlakeConnection(wrapped.connect(unwrappedUrlStr, info));
         } else {
           throw new SQLException("Driver " + className + " does not accept URL: " + url);
         }

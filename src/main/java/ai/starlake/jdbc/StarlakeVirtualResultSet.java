@@ -110,6 +110,9 @@ public class StarlakeVirtualResultSet implements ResultSet {
       currentRow++;
       return true;
     }
+    if (values.length > 0 && currentRow == values.length - 1) {
+      currentRow = values.length;
+    }
     return false;
   }
 
@@ -176,7 +179,7 @@ public class StarlakeVirtualResultSet implements ResultSet {
   @Override
   public boolean isAfterLast() throws SQLException {
     checkClosed();
-    return currentRow + 1 >= values.length;
+    return currentRow >= values.length;
   }
 
   @Override

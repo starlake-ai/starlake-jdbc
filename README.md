@@ -1,23 +1,23 @@
 # [Starlake JDBC Driver](https://github.com/starlake-ai/starlake-jdbc) - The JDBC Proxy Driver for branching and sandboxing of DDL and DML statements
 
-[![Gradle CI](https://github.com/starlake-ai/starlake-jdbc/actions/workflows/snapshot.yml/badge.svg)](https://github.com/starlake-ai/jsqltranspiler/actions/workflows/snapshot.yml)
+[![Gradle CI](https://github.com/starlake-ai/starlake-jdbc/actions/workflows/snapshot.yml/badge.svg)](https://github.com/starlake-ai/starlake-jdbc/actions/workflows/snapshot.yml)
 [![License](https://img.shields.io/badge/License-Apache-blue)](#LICENSE)
-[![Issues](https://img.shields.io/github/issues/starlake-ai/jsqltranspiler)](https://github.com/starlake-ai/starlake-jdbc/issues)
+[![Issues](https://img.shields.io/github/issues/starlake-ai/starlake-jdbc)](https://github.com/starlake-ai/starlake-jdbc/issues)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://egghead.io/courses/how-to-contribute-to-an-open-source-project-on-github?af=5236ad)
 
 Run and test all your DDL/DML statements in a sandboxed branch before applying to production:
 
 - connect to your Database using Starlake JDBC Driver as wrapper around the RDBMS' driver
 - start a new branch via `BRANCH START`, which will create a new staging schema
-- execute your DDL commands, which will create copies of the affected tables in the staging schema only without altering the existing tablesstaging
-- execute your Queries or DML statements, which will be intercepted and rewritten to use the staging schema and tablesapply
+- execute your DDL commands, which will create copies of the affected tables in the staging schema only without altering the existing tables
+- execute your Queries or DML statements, which will be intercepted and rewritten to use the staging schema and tables
 - end your branch via `BRANCH APPLY` applying all the changes to production or `BRANCH DROP`
 - Syntax: `BRANCH` or `SESSION` keyword can be used and mixed:
   ```bnf
   BRANCH START [branchId] [ WITH key=value (, key=value)* ]
   BRANCH APPLY [branchId] [ WITH key=value (, key=value)* ]
   BRANCH DROP  [branchId] [ WITH key=value (, key=value)* ]
-  BRANCH DESCRIBE [branchId] 
+  BRANCH DESCRIBE [branchId]
   BRANCH STATUS [branchId]
   ```
 
@@ -58,7 +58,7 @@ INSERT INTO a VALUES ('test2');
 -- start a new branch that will hold all modifications
 BRANCH START branch1;
 
--- populate the new table with data w/o touching productionadd more test cases
+-- populate the new table with data w/o touching production
 -- after execution `branch.a` will hold 3 records while `public.a` still holds 2 records
 INSERT INTO a VALUES ('test3');
 
@@ -118,7 +118,7 @@ SELECT * FROM f;                    -- works on BRANCHED table `session1.f`
 SELECT * FROM test4.f;              -- also works on BRANCHED table `session1.f`
 
 BRANCH APPLY session1;              -- implement the branched changes
-                                    -- creating schema `test4` and table `test4.f`           
+                                    -- creating schema `test4` and table `test4.f`
 
 -- PHYSICAL ----------------------------------------------------------------------
 SELECT * FROM f;                    -- works on PHYSICAL table `test4.f`
@@ -130,7 +130,7 @@ SELECT * FROM test4.f;              -- also works on PHYSICAL table `test4.f`
 Class.forName("ai.starlake.jdbc.StarlakeDriver");
 
 // Wrap an H2 in memory DB
-Driver driver = DriverManager.getDriver("jdbc:starlake:h2:test");
+Connection conn = DriverManager.getConnection("jdbc:starlake:h2:mem:test");
 
 // Define a branch ID
 final String branchId = "branch1";
@@ -139,24 +139,24 @@ try (Statement st = conn.createStatement()) {
 
     // is a Starlake Session aware connection
     Assertions.assertInstanceOf(StarlakeConnection.class, conn);
-    
+
     // Start a branch
     st.execute("BRANCH START " + branchId);
     Assertions.assertEquals(Status.STARTED,
         ((StarlakeConnection) conn).currentSession.getStatus());
-    
+
     // Create a table without touching the current schema "PUBLIC"
     st.execute("CREATE TABLE a (b VARCHAR(1));");
-    
+
     assertThatH2SchemaTableNotExists("public", "a");
     assertThatH2SessionTableExists(branchId, "a");
-    
+
     // Apply the branch by creating the table in schema "PUBLIC"
     st.execute("BRANCH APPLY branch1;");
-    
+
     assertThatH2SchemaTableExists("public", "a");
     assertThatH2SessionNotExists(branchId);
-    
+
     // Confirm branch status
     Assertions.assertEquals(Status.APPLIED,
         ((StarlakeConnection) conn).currentSession.getStatus());

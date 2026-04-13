@@ -670,7 +670,7 @@ public class StarlakeCallableStatement extends StarlakeStatement implements Call
 
   @Override
   public ResultSet executeQuery() throws SQLException {
-    return wrapped.executeQuery();
+    return new StarlakeResultSet(this, wrapped.executeQuery());
   }
 
   @Override
@@ -817,7 +817,7 @@ public class StarlakeCallableStatement extends StarlakeStatement implements Call
 
   @Override
   public ResultSetMetaData getMetaData() throws SQLException {
-    return wrapped.getMetaData();
+    return new StarlakeResultSetMetaData(wrapped.getMetaData());
   }
 
   @Override

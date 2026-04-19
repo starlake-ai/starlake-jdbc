@@ -440,19 +440,22 @@ public class StarlakeSession {
 
         // use row based tables on snowflake
         String hybridStr = conn.type == StarlakeConnection.DatabaseType.SNOWFLAKE ? " HYBRID" : "";
+        // BigQuery requires NOT ENFORCED on primary keys
+        String pkSuffix =
+            conn.type == StarlakeConnection.DatabaseType.BIGQUERY ? " NOT ENFORCED" : "";
 
         //@formatter:off
         final String SESSION_DDL_STR =
               "CREATE" + hybridStr + " TABLE IF NOT EXISTS " + getMappingTable() + " (\n" +
               "    from_table       VARCHAR (256)\n" +
               "    , to_table       VARCHAR (256)\n" +
-              "    , primary key(from_table)\n" +
+              "    , primary key(from_table)" + pkSuffix + "\n" +
               ")\n" +
               ";\n" +
               "CREATE" + hybridStr + " TABLE IF NOT EXISTS " + getHistoryTable()  +" (\n" +
               "    update_timestamp         TIMESTAMP\n" +
               "    , sql_text               "+ conn.getClobType() +"\n" +
-              "    , primary key (update_timestamp)\n" +
+              "    , primary key (update_timestamp)" + pkSuffix + "\n" +
               ")\n" +
               ";";
         //@formatter:on

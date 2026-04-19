@@ -197,7 +197,8 @@ public class StarlakePreparedStatement extends StarlakeStatement implements Prep
 
   @Override
   public ResultSetMetaData getMetaData() throws SQLException {
-    return new StarlakeResultSetMetaData(wrapped.getMetaData());
+    ResultSetMetaData meta = wrapped.getMetaData();
+    return meta != null ? new StarlakeResultSetMetaData(meta) : null;
   }
 
   @Override

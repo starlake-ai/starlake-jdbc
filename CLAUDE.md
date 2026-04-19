@@ -45,7 +45,7 @@ These can also be set as Gradle properties.
 The driver uses the **Proxy/Decorator pattern** — each core JDBC interface has a `Starlake*` wrapper:
 
 - **StarlakeDriver** → `java.sql.Driver` — entry point, discovers and wraps the underlying JDBC driver
-- **StarlakeConnection** → `java.sql.Connection` — manages branch lifecycle (START/APPLY/DROP), DBMS-specific schema cloning (Snowflake zero-copy, Databricks shallow clone, BigQuery snapshot, generic CTAS)
+- **StarlakeConnection** → `java.sql.Connection` — manages branch lifecycle (START/APPLY/DROP), DBMS-specific schema cloning (Snowflake zero-copy, Databricks shallow clone, BigQuery clone, generic CTAS)
 - **StarlakeSession** → core state manager — tracks created/dropped schemas and tables, performs SQL rewriting via JSQLTranspiler, maintains table replacement mappings (original → branch), optional database persistence
 - **StarlakeStatement / StarlakePreparedStatement / StarlakeCallableStatement** → intercept SQL execution, parse branch commands (`BRANCH START`, `BRANCH APPLY`, etc.), delegate rewritten SQL to the real driver
 - **StarlakeResultSet / StarlakeVirtualResultSet** → result set wrappers; virtual variant provides in-memory results for branch commands

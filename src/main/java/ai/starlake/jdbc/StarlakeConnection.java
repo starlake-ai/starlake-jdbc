@@ -602,25 +602,28 @@ public class StarlakeConnection implements Connection {
         }
         return new StarlakeVirtualResultSet("SESSION_COMMAND", getSessionCommand(st));
       case SHOW:
+        StarlakeSession showTarget;
         if (st.getId() == null) {
           showSession(st.getOptions());
+          showTarget = currentSession;
         } else {
           showSession(st.getId(), st.getOptions());
+          showTarget = sessions.get(st.getId());
         }
 
-        if (currentSession == null) {
+        if (showTarget == null) {
           data.add(new Object[] {"status", "Does not exist"});
         } else {
 
-          data.add(new Object[] {"id", currentSession.getSessionId()});
-          data.add(new Object[] {"status", currentSession.getStatus().toString()});
-          if (currentSession.getStartInstant() != null) {
-            data.add(new Object[] {"start_timestamp", currentSession.getStartInstant().toString()});
+          data.add(new Object[] {"id", showTarget.getSessionId()});
+          data.add(new Object[] {"status", showTarget.getStatus().toString()});
+          if (showTarget.getStartInstant() != null) {
+            data.add(new Object[] {"start_timestamp", showTarget.getStartInstant().toString()});
           }
-          if (currentSession.getEndInstant() != null) {
-            data.add(new Object[] {"end_timestamp", currentSession.getEndInstant()});
+          if (showTarget.getEndInstant() != null) {
+            data.add(new Object[] {"end_timestamp", showTarget.getEndInstant()});
           }
-          for (Map.Entry<String, String> e : currentSession.options.entrySet()) {
+          for (Map.Entry<String, String> e : showTarget.options.entrySet()) {
             data.add(new Object[] {e.getKey(), e.getValue()});
           }
         }

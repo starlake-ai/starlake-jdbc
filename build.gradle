@@ -10,7 +10,7 @@ buildscript {
 plugins {
     id 'java-library'
     id "com.vanniktech.maven.publish" version "latest.release"
-    id 'com.gradleup.shadow' version 'latest.release'
+    id 'com.gradleup.shadow' version '8.3.+' // 9.x requires Gradle 9
     id 'maven-publish'
     id 'signing'
 
@@ -264,7 +264,7 @@ jar {
 
 shadowJar {
     minimize()
-    enableAutoRelocation = true
+    enableRelocation = true
     archiveClassifier = "assembly"
 }
 

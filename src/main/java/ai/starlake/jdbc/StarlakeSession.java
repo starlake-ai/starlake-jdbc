@@ -19,12 +19,15 @@ package ai.starlake.jdbc;
 import ai.starlake.transpiler.JSQLReplacer;
 import ai.starlake.transpiler.schema.CaseInsensitiveLinkedHashMap;
 import ai.starlake.transpiler.schema.JdbcCatalog;
+import ai.starlake.transpiler.schema.JdbcColumn;
 import ai.starlake.transpiler.schema.JdbcMetaData;
 import ai.starlake.transpiler.schema.JdbcSchema;
+import ai.starlake.transpiler.schema.JdbcTable;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.expression.ExpressionVisitor;
 import net.sf.jsqlparser.expression.ExpressionVisitorAdapter;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
+import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.MultiPartName;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.Statement;
@@ -42,6 +45,7 @@ import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.SelectVisitorAdapter;
 import net.sf.jsqlparser.statement.truncate.Truncate;
 import net.sf.jsqlparser.statement.update.Update;
+import net.sf.jsqlparser.util.TablesNamesFinder;
 
 import java.math.BigInteger;
 import java.sql.PreparedStatement;
@@ -93,6 +97,7 @@ public class StarlakeSession {
   private final CaseInsensitiveLinkedHashMap<Table> replacementTables =
       new CaseInsensitiveLinkedHashMap<>();
   private final TreeMap<Instant, String> statements = new TreeMap<>();
+  private Instant lastInstant = null;
 
   private final ExpressionVisitor<Boolean> modifyingTableExpressionVisitor =
       new ExpressionVisitorAdapter<>();
@@ -134,7 +139,7 @@ public class StarlakeSession {
                 String sql = conn.getCloneTableStatement(replacementTable.getFullyQualifiedName(),
                     originalName);
                 st.executeUpdate(sql);
-                metaData.updateTable(conn, replacementTable);
+                updateTable(conn, replacementTable);
               } catch (Exception ex) {
                 throw new RuntimeException("Failed to create a copy of " + originalName, ex);
               }
@@ -145,12 +150,7 @@ public class StarlakeSession {
 
             if (isPersistent() && tableMappingInsertStatement != null) {
               try {
-                tableMappingDeleteStatement.setString(1, originalName);
-                tableMappingDeleteStatement.executeUpdate();
-
-                tableMappingInsertStatement.setString(1, originalName);
-                tableMappingInsertStatement.setString(2, replacementTable.getFullyQualifiedName());
-                tableMappingInsertStatement.executeUpdate();
+                recordTableMapping(originalName, replacementTable.getFullyQualifiedName());
               } catch (Exception ex) {
                 LOGGER.log(Level.SEVERE, "Failed to persist the table mapping: " + originalName
                     + " --> " + replacementTable, ex);
@@ -389,6 +389,9 @@ public class StarlakeSession {
         StarlakeSession session = new StarlakeSession(conn, id, options);
         session.replacementTables.putAll(replacementTables);
         session.statements.putAll(statements);
+        if (!statements.isEmpty()) {
+          session.lastInstant = statements.lastKey();
+        }
 
         // Maintain the meta data for all persisting replacement tables
         for (String sqlStr : statements.values()) {
@@ -409,7 +412,7 @@ public class StarlakeSession {
 
         // Maintain the meta data for all persisting replacement tables
         for (Table replacementTable : replacementTables.values()) {
-          session.metaData.updateTable(conn, replacementTable);
+          session.updateTable(conn, replacementTable);
         }
 
         return session;
@@ -449,13 +452,13 @@ public class StarlakeSession {
               "CREATE" + hybridStr + " TABLE IF NOT EXISTS " + getMappingTable() + " (\n" +
               "    from_table       VARCHAR (256)\n" +
               "    , to_table       VARCHAR (256)\n" +
-              "    , primary key(from_table)" + pkSuffix + "\n" +
+              (conn.supportsPrimaryKeys() ? "    , primary key(from_table)" + pkSuffix + "\n" : "") +
               ")\n" +
               ";\n" +
               "CREATE" + hybridStr + " TABLE IF NOT EXISTS " + getHistoryTable()  +" (\n" +
               "    update_timestamp         TIMESTAMP\n" +
               "    , sql_text               "+ conn.getClobType() +"\n" +
-              "    , primary key (update_timestamp)" + pkSuffix + "\n" +
+              (conn.supportsPrimaryKeys() ? "    , primary key (update_timestamp)" + pkSuffix + "\n" : "") +
               ")\n" +
               ";";
         //@formatter:on
@@ -481,7 +484,8 @@ public class StarlakeSession {
         statement.executeUpdate("CREATE SCHEMA " + id);
       }
 
-      // Snowflake sets any CREATE SCHEMA as current schema
+      // Snowflake sets any CREATE SCHEMA as current schema, so we must reset it.
+      // BigQuery does not support USE SCHEMA — it requires fully-qualified table names.
       if (List.of(StarlakeConnection.DatabaseType.SNOWFLAKE).contains(conn.type)) {
         try {
           statement.executeUpdate("USE SCHEMA " + currentCatalog + "." + currentSchema);
@@ -490,7 +494,67 @@ public class StarlakeSession {
         }
       }
     }
-    this.metaData = new JdbcMetaData(conn.wrapped);
+    this.metaData = new JdbcMetaData(metaDataConnection(conn));
+  }
+
+  /**
+   * The connection JdbcMetaData reads the catalog from. JdbcMetaData expects every schema's catalog
+   * among the catalogs, which Quack on Demand does not give: it lists only the tenant database as a
+   * catalog, and still returns the schemas of memory, system and temp. On DuckDB the catalog list
+   * is therefore completed with the catalogs the schemas name.
+   */
+  private static java.sql.Connection metaDataConnection(StarlakeConnection conn) {
+    if (conn.type != StarlakeConnection.DatabaseType.DUCKDB) {
+      return conn.wrapped;
+    }
+    final java.sql.Connection wrapped = conn.wrapped;
+    return (java.sql.Connection) java.lang.reflect.Proxy.newProxyInstance(
+        StarlakeSession.class.getClassLoader(), new Class<?>[] {java.sql.Connection.class},
+        (proxy, method, args) -> {
+          try {
+            if ("getMetaData".equals(method.getName()) && method.getParameterCount() == 0) {
+              return completedCatalogs(wrapped.getMetaData());
+            }
+            return method.invoke(wrapped, args);
+          } catch (java.lang.reflect.InvocationTargetException e) {
+            throw e.getCause();
+          }
+        });
+  }
+
+  private static java.sql.DatabaseMetaData completedCatalogs(java.sql.DatabaseMetaData metaData) {
+    return (java.sql.DatabaseMetaData) java.lang.reflect.Proxy.newProxyInstance(
+        StarlakeSession.class.getClassLoader(), new Class<?>[] {java.sql.DatabaseMetaData.class},
+        (proxy, method, args) -> {
+          try {
+            if ("getCatalogs".equals(method.getName()) && method.getParameterCount() == 0) {
+              java.util.LinkedHashSet<String> catalogs = new java.util.LinkedHashSet<>();
+              try (ResultSet rs = metaData.getCatalogs()) {
+                while (rs.next()) {
+                  catalogs.add(rs.getString("TABLE_CAT"));
+                }
+              }
+              try (ResultSet rs = metaData.getSchemas()) {
+                while (rs.next()) {
+                  String catalog = rs.getString("TABLE_CATALOG");
+                  if (catalog != null) {
+                    catalogs.add(catalog);
+                  }
+                }
+              }
+              Object[][] rows = new Object[catalogs.size()][];
+              int i = 0;
+              for (String catalog : catalogs) {
+                rows[i++] = new Object[] {catalog};
+              }
+              return new StarlakeVirtualResultSet(new String[] {"TABLE_CAT"},
+                  new Class<?>[] {String.class}, rows);
+            }
+            return method.invoke(metaData, args);
+          } catch (java.lang.reflect.InvocationTargetException e) {
+            throw e.getCause();
+          }
+        });
   }
 
   public static String generateUniqueID() {
@@ -570,15 +634,77 @@ public class StarlakeSession {
     }
   }
 
+  /**
+   * Refresh the metadata of one table.
+   *
+   * <p>
+   * JdbcMetaData.updateTable does not fit DuckDB, DuckLake and Quack on Demand: it looks the table
+   * up by its upper cased name, and DuckDB matches table names case sensitively, and it first tries
+   * INFORMATION_SCHEMA queries written for other databases. Inside a transaction, which is how a
+   * job writes, the first failing query aborts the transaction. So on DuckDB the table is looked up
+   * by its name as written, through the driver's DatabaseMetaData only.
+   */
+  public void updateTable(java.sql.Connection connection, Table t) throws SQLException {
+    if (conn.type != StarlakeConnection.DatabaseType.DUCKDB) {
+      metaData.updateTable(connection, t);
+      return;
+    }
+    String catalogName = t.getUnquotedCatalogName();
+    if (catalogName == null || catalogName.isEmpty()) {
+      catalogName = metaData.getCurrentCatalogName();
+    }
+    String schemaName = t.getUnquotedSchemaName();
+    if (schemaName == null || schemaName.isEmpty()) {
+      schemaName = metaData.getCurrentSchemaName();
+    }
+    boolean unqualified = t.getUnquotedSchemaName() == null || t.getUnquotedSchemaName().isEmpty();
+    if (!refreshDuckDbTable(connection, catalogName, schemaName, t.getUnquotedName(), false)
+        && unqualified) {
+      // An unqualified temporary table or view lives in the "temp" catalog, and DuckDB resolves
+      // unqualified names there first: register it in the current schema, where the rewriting
+      // looks unqualified names up
+      refreshDuckDbTable(connection, "temp", null, t.getUnquotedName(), true);
+    }
+  }
+
+  private boolean refreshDuckDbTable(java.sql.Connection connection, String catalogName,
+      String schemaName, String tableName, boolean asCurrentSchema) throws SQLException {
+    boolean found = false;
+    java.sql.DatabaseMetaData databaseMetaData = connection.getMetaData();
+    try (ResultSet tables = databaseMetaData.getTables(catalogName, schemaName, tableName, null)) {
+      while (tables.next()) {
+        found = true;
+        JdbcTable jdbcTable = new JdbcTable(tables.getString("TABLE_CAT"),
+            tables.getString("TABLE_SCHEM"), tables.getString("TABLE_NAME"));
+        try (ResultSet columns = databaseMetaData.getColumns(jdbcTable.tableCatalog,
+            jdbcTable.tableSchema, jdbcTable.tableName, "%")) {
+          while (columns.next()) {
+            String columnName = columns.getString("COLUMN_NAME");
+            jdbcTable.columns.put(columnName,
+                new JdbcColumn(jdbcTable.tableCatalog, jdbcTable.tableSchema, jdbcTable.tableName,
+                    columnName, columns.getInt("DATA_TYPE"), columns.getString("TYPE_NAME"),
+                    columns.getInt("COLUMN_SIZE"), columns.getInt("DECIMAL_DIGITS"),
+                    columns.getInt("NULLABLE"), columns.getString("REMARKS"),
+                    new Column(columnName)));
+          }
+        }
+        if (asCurrentSchema) {
+          jdbcTable.tableCatalog = metaData.getCurrentCatalogName();
+          jdbcTable.tableSchema = metaData.getCurrentSchemaName();
+        }
+        metaData.put(jdbcTable);
+      }
+    }
+    return found;
+  }
+
   public String rewriteSql(Statement st, String sqlStr) throws SQLException {
     LOGGER.info("Rewrite:\n" + sqlStr);
     if (status == Status.STARTED) {
-      statements.put(Instant.now(), sqlStr);
+      Instant instant = nextInstant();
+      statements.put(instant, sqlStr);
 
-      if (isPersistent() && historyStatement != null) {
-        historyStatement.setString(1, sqlStr);
-        historyStatement.executeUpdate();
-      }
+      recordHistory(sqlStr, instant);
 
       // maintain the replacement tables
       st.accept(statementVisitor, st);
@@ -601,10 +727,115 @@ public class StarlakeSession {
 
       JSQLReplacer replacer = new JSQLReplacer(metaData);
       final Statement replace = replacer.replace(st, replacementTables);
+      requalifyColumns(replace);
 
       return replace.toString();
     } else {
       return sqlStr;
+    }
+  }
+
+  /**
+   * Point the columns qualified by a replaced table at its replacement. JSQLReplacer only rewrites
+   * the qualifiers it resolved, and leaves the outer references of a correlated subquery, as in
+   * {@code DELETE FROM sales.orders WHERE EXISTS (SELECT 1 FROM incoming WHERE incoming.id =
+   * sales.orders.id)}, on the original table. Only schema qualified columns are rewritten: a column
+   * qualified by the bare table name still binds to the replacement, which has the same name.
+   */
+  private void requalifyColumns(Statement statement) {
+    if (replacementTables.isEmpty()) {
+      return;
+    }
+    final String currentCatalog = metaData.getCurrentCatalogName();
+    final String currentSchema = metaData.getCurrentSchemaName();
+    TablesNamesFinder<Void> requalifier = new TablesNamesFinder<>() {
+      @Override
+      public <S> Void visit(Column column, S context) {
+        Table qualifier = column.getTable();
+        if (qualifier != null && qualifier.getName() != null && qualifier.getSchemaName() != null) {
+          String originalName = new Table(qualifier.getFullyQualifiedName())
+              .setUnsetCatalogAndSchema(currentCatalog, currentSchema).getFullyQualifiedName();
+          Table replacement = replacementTables.get(originalName);
+          if (replacement != null) {
+            column.setTable(new Table(replacement.getFullyQualifiedName()));
+          }
+        }
+        return super.visit(column, context);
+      }
+    };
+    try {
+      requalifier.getTables(statement);
+    } catch (RuntimeException ex) {
+      LOGGER.log(Level.FINE, "Could not requalify the columns of:\n" + statement, ex);
+    }
+  }
+
+  /**
+   * Whether the session tables are written with bound parameters. Quack on Demand has no parameter
+   * binding, so on DuckDB the values are written as escaped string literals.
+   */
+  private boolean bindsParameters() {
+    return conn.type != StarlakeConnection.DatabaseType.DUCKDB;
+  }
+
+  private static String literal(String value) {
+    return "'" + value.replace("'", "''") + "'";
+  }
+
+  /**
+   * The instant a statement enters the history under, always after the previous one: the history is
+   * keyed and replayed by it, and two statements under the same instant would keep only one.
+   */
+  private synchronized Instant nextInstant() {
+    Instant now = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    if (lastInstant != null && !now.isAfter(lastInstant)) {
+      now = lastInstant.plus(1, java.time.temporal.ChronoUnit.MICROS);
+    }
+    lastInstant = now;
+    return now;
+  }
+
+  /** Append a statement to the persisted session history, when the session is persisted. */
+  void recordHistory(String sql) throws SQLException {
+    recordHistory(sql, nextInstant());
+  }
+
+  /**
+   * On DuckDB the row is stamped with the statement's instant: CURRENT_TIMESTAMP is the start of
+   * the transaction there, so every statement of a transaction would get the same stamp and all but
+   * one would be lost when the session is read back.
+   */
+  private void recordHistory(String sql, Instant instant) throws SQLException {
+    if (!isPersistent() || historyStatement == null) {
+      return;
+    }
+    if (bindsParameters()) {
+      historyStatement.setString(1, sql);
+      historyStatement.executeUpdate();
+    } else {
+      String timestamp = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS")
+          .withZone(java.time.ZoneOffset.UTC).format(instant);
+      try (java.sql.Statement statement = conn.wrapped.createStatement()) {
+        statement.executeUpdate("INSERT INTO " + getHistoryTable() + " VALUES ( TIMESTAMP '"
+            + timestamp + "', " + literal(sql) + " )");
+      }
+    }
+  }
+
+  private void recordTableMapping(String fromTable, String toTable) throws SQLException {
+    if (bindsParameters()) {
+      tableMappingDeleteStatement.setString(1, fromTable);
+      tableMappingDeleteStatement.executeUpdate();
+      tableMappingInsertStatement.setString(1, fromTable);
+      tableMappingInsertStatement.setString(2, toTable);
+      tableMappingInsertStatement.executeUpdate();
+    } else {
+      try (java.sql.Statement statement = conn.wrapped.createStatement()) {
+        statement.executeUpdate(
+            "DELETE FROM " + getMappingTable() + " WHERE from_table = " + literal(fromTable));
+        statement.executeUpdate("INSERT INTO " + getMappingTable() + " VALUES ( "
+            + literal(fromTable) + ", " + literal(toTable) + " )");
+      }
     }
   }
 

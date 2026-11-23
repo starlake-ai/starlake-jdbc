@@ -54,7 +54,7 @@ public class StarlakeConnection implements Connection {
   protected final ExecutorService executor = Executors.newCachedThreadPool();
 
   protected enum DatabaseType {
-    MYSQL, MARIADB, POSTGRES, ORACLE, SQLSERVER, SQLITE, H2, DERBY, DB2, FIREBIRD, HSQL, INFORMIX, TERADATA, SAPDB, BIGQUERY, SNOWFLAKE, REDSHIFT, DATABRICKS, UNKNOWN
+    MYSQL, MARIADB, POSTGRES, ORACLE, SQLSERVER, SQLITE, H2, DERBY, DB2, FIREBIRD, HSQL, INFORMIX, TERADATA, SAPDB, BIGQUERY, SNOWFLAKE, REDSHIFT, DATABRICKS, DUCKDB, UNKNOWN
   }
 
   protected final DatabaseType type;
@@ -114,6 +114,11 @@ public class StarlakeConnection implements Connection {
       if (productName.contains("sap")) {
         return DatabaseType.SAPDB;
       }
+      // DuckDB, DuckLake attached to DuckDB, and Quack on Demand, which serves DuckDB and DuckLake
+      // over Arrow Flight SQL and reports itself as "Quack on Demand"
+      if (productName.contains("duckdb") || productName.contains("quack")) {
+        return DatabaseType.DUCKDB;
+      }
 
       // Cloud warehouses often identified better via URL
       if (url.contains("bigquery")) {
@@ -164,9 +169,19 @@ public class StarlakeConnection implements Connection {
         return "VARCHAR(MAX)"; // up to 65535 bytes
       case DATABRICKS:
         return "STRING"; // up to 2 GB
+      case DUCKDB:
+        return "VARCHAR"; // unbounded
       default:
         throw new UnsupportedOperationException("Unsupported DatabaseType: " + type);
     }
+  }
+
+  /**
+   * Whether the session tables may declare a primary key. DuckLake rejects PRIMARY KEY and UNIQUE
+   * constraints, and a DuckDB connection cannot tell whether its current catalog is a DuckLake one.
+   */
+  public final boolean supportsPrimaryKeys() {
+    return type != DatabaseType.DUCKDB;
   }
 
   public final String getCloneTableStatement(String tableName, String sourceName) {

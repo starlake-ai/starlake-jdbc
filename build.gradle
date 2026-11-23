@@ -10,7 +10,7 @@ buildscript {
 plugins {
     id 'java-library'
     id "com.vanniktech.maven.publish" version "latest.release"
-    id 'com.gradleup.shadow' version 'latest.release'
+    id 'com.gradleup.shadow' version '8.3.+' // 9.x requires Gradle 9
     id 'maven-publish'
     id 'signing'
 
@@ -64,7 +64,7 @@ def getVersion = { boolean considerSnapshot ->
         commit = matcher.group('commit') ?: null
     }
 
-    if (versionStr.endsWith('SNAPSHOT') || build != null) {
+    if (considerSnapshot || versionStr.endsWith('SNAPSHOT') || build != null) {
         minor++
         if (patch != null) patch = 0
     }
@@ -264,7 +264,7 @@ jar {
 
 shadowJar {
     minimize()
-    enableAutoRelocation = true
+    enableRelocation = true
     archiveClassifier = "assembly"
 }
 

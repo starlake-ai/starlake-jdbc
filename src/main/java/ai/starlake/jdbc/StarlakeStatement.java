@@ -27,6 +27,7 @@ import net.sf.jsqlparser.statement.UseStatement;
 import net.sf.jsqlparser.statement.alter.Alter;
 import net.sf.jsqlparser.statement.create.schema.CreateSchema;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
+import net.sf.jsqlparser.statement.create.view.CreateView;
 import net.sf.jsqlparser.statement.drop.Drop;
 
 import java.sql.Connection;
@@ -130,10 +131,8 @@ public class StarlakeStatement implements Statement {
       }
     } catch (JSQLParserException e) {
       StarlakeConnection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
-      if (connection.currentSession != null && connection.currentSession.isPersistent()
-          && connection.currentSession.historyStatement != null) {
-        connection.currentSession.historyStatement.setString(1, sql);
-        connection.currentSession.historyStatement.executeUpdate();
+      if (connection.currentSession != null) {
+        connection.currentSession.recordHistory(sql);
       }
       return fallbackExecutor.execute(sql);
     }
@@ -191,10 +190,8 @@ public class StarlakeStatement implements Statement {
       }
     } catch (JSQLParserException e) {
       StarlakeConnection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
-      if (connection.currentSession != null && connection.currentSession.isPersistent()
-          && connection.currentSession.historyStatement != null) {
-        connection.currentSession.historyStatement.setString(1, sql);
-        connection.currentSession.historyStatement.executeUpdate();
+      if (connection.currentSession != null) {
+        connection.currentSession.recordHistory(sql);
       }
       return fallbackExecutor.execute(sql);
     }
@@ -205,10 +202,14 @@ public class StarlakeStatement implements Statement {
     try {
       if (st instanceof CreateTable) {
         Table t = new Table(((CreateTable) st).getTable().getFullyQualifiedName());
-        connection.currentSession.metaData.updateTable(connection.wrapped, t);
+        connection.currentSession.updateTable(connection.wrapped, t);
+      } else if (st instanceof CreateView) {
+        // a view the next statements read from, such as the SL_INCOMING view of a merge
+        Table t = new Table(((CreateView) st).getView().getFullyQualifiedName());
+        connection.currentSession.updateTable(connection.wrapped, t);
       } else if (st instanceof Alter) {
         Table t = new Table(((Alter) st).getTable().getFullyQualifiedName());
-        connection.currentSession.metaData.updateTable(connection.wrapped, t);
+        connection.currentSession.updateTable(connection.wrapped, t);
       } else if (st instanceof Drop) {
         Drop drop = (Drop) st;
         if ("TABLE".equalsIgnoreCase(drop.getType())) {
@@ -312,7 +313,10 @@ public class StarlakeStatement implements Statement {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
           Boolean isSchema = st.accept(objectsVisitor, connection.getMetaData());
           if (isSchema == null || !isSchema) {
-            return wrappedExecutor.execute(rewrittenSql);
+            boolean result = wrappedExecutor.execute(rewrittenSql);
+            // Update metadata when tables have been changed
+            updateMetadataIfNeeded(st);
+            return result;
           } else {
             StarlakeSession.LOGGER.warning("Ignore schema DML statements.");
             return false;
@@ -323,10 +327,8 @@ public class StarlakeStatement implements Statement {
       }
     } catch (JSQLParserException e) {
       StarlakeConnection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
-      if (connection.currentSession != null && connection.currentSession.isPersistent()
-          && connection.currentSession.historyStatement != null) {
-        connection.currentSession.historyStatement.setString(1, sql);
-        connection.currentSession.historyStatement.executeUpdate();
+      if (connection.currentSession != null) {
+        connection.currentSession.recordHistory(sql);
       }
       return fallbackExecutor.execute(sql);
     }

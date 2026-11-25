@@ -22,16 +22,6 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - id: install-gradle-properties
-        name: Install Gradle Properties from Secret
-        env:
-          GRADLE_PROPERTIES: ${{ secrets.GRADLE_PROPERTIES }}
-        shell: bash
-        run: |
-          mkdir -p ~/.gradle/
-          echo "GRADLE_USER_HOME=${HOME}/.gradle" >> $GITHUB_ENV
-          echo "${GRADLE_PROPERTIES}" > ~/.gradle/gradle.properties
-
       # 🔎 Debug step: confirm SNOWFLAKE_* env vars exist
       - name: Debug Env Vars
         run: env | grep SNOWFLAKE || true
@@ -59,3 +49,7 @@ jobs:
           SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
           SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
           SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          # Snapshots are not signed (the plugin only requires signing for
+          # release versions), so the Central Portal token is all it needs.
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}

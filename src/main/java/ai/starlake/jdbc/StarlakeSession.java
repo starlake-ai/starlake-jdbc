@@ -63,7 +63,9 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.logging.Level;
@@ -750,7 +752,12 @@ public class StarlakeSession {
    */
   public String rewriteSql(Statement st, String sqlStr) throws SQLException {
     LOGGER.info("Rewrite:\n" + sqlStr);
-    if (status == Status.STARTED) {
+    if (status == Status.STARTED && readsNoDataTable(st)) {
+      // the catalog of the database, as a job reads it to check that its table exists, or no
+      // table at all, as in a SELECT over VALUES: there is nothing to redirect, and the transpiler
+      // knows neither the system schemas nor the columns of a VALUES list
+      return sqlStr;
+    } else if (status == Status.STARTED) {
       // maintain the replacement tables
       st.accept(statementVisitor, st);
 
@@ -855,6 +862,33 @@ public class StarlakeSession {
     Instant instant = nextInstant();
     statements.put(instant, sqlStr);
     recordHistory(sqlStr, instant);
+  }
+
+  /** The schemas of the database catalog: a branch has no copy of them. */
+  private static final Set<String> CATALOG_SCHEMAS = Set.of("information_schema", "pg_catalog");
+
+  /**
+   * Whether the statement reads no table a branch copies: a read-only statement that names no
+   * table, or whose every table is in a catalog schema, such as {@code information_schema.tables}.
+   */
+  static boolean readsNoDataTable(Statement st) {
+    if (!isReadOnly(st)) {
+      return false;
+    }
+    final Set<String> tables;
+    try {
+      tables = new TablesNamesFinder<>().getTables(st);
+    } catch (UnsupportedOperationException e) {
+      return false;
+    }
+    for (String name : tables) {
+      final String[] parts = name.replace("\"", "").replace("`", "").split("\\.");
+      if (parts.length < 2
+          || !CATALOG_SCHEMAS.contains(parts[parts.length - 2].toLowerCase(Locale.ROOT))) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**

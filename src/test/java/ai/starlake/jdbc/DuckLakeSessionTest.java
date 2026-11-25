@@ -24,6 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -106,5 +107,64 @@ public class DuckLakeSessionTest {
     Assertions.assertEquals(branchRows, rows(raw, query));
     continued.close();
     branched.close();
+  }
+
+  private static long tableCount(Connection conn, String schema, String table) throws SQLException {
+    String sql = "SELECT count(*) FROM information_schema.tables"
+        + " WHERE table_schema = ? AND table_name = ?";
+    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+      ps.setString(1, schema);
+      ps.setString(2, table);
+      try (ResultSet rs = ps.executeQuery()) {
+        if (rs.next()) {
+          return rs.getLong(1);
+        }
+        throw new AssertionError("count(*) returned no row");
+      }
+    }
+  }
+
+  /**
+   * Catalog queries, as a job runs them to check that its table exists, read the catalog of the
+   * database on a branch too, from a prepared statement or a plain one.
+   */
+  private static void assertCatalogQueriesRun(Connection raw) throws SQLException {
+    execute(raw, "CREATE SCHEMA sales");
+    execute(raw, "CREATE TABLE sales.orders (id VARCHAR, amount INTEGER)");
+    StarlakeConnection branched = new StarlakeConnection(raw);
+    execute(branched, "BRANCH START br_catalog");
+    Assertions.assertEquals(1, tableCount(branched, "sales", "orders"));
+    Assertions.assertEquals(0, tableCount(branched, "sales", "no_such_table"));
+    Assertions.assertEquals(List.of("amount:INTEGER", "id:VARCHAR"),
+        rows(branched, "SELECT column_name, data_type FROM information_schema.columns"
+            + " WHERE table_schema = 'sales' AND table_name = 'orders' ORDER BY column_name"));
+    // a query that names no table, as a job resolves the columns of its SELECT
+    try (
+        PreparedStatement ps = branched.prepareStatement("SELECT * FROM (SELECT * FROM"
+            + " (VALUES ('2', 250)) AS t(id, amount)) SL_RESOLVE_COLS LIMIT 0");
+        ResultSet rs = ps.executeQuery()) {
+      Assertions.assertEquals(2, rs.getMetaData().getColumnCount());
+      Assertions.assertEquals("id", rs.getMetaData().getColumnName(1));
+    }
+    branched.setAutoCommit(false);
+    Assertions.assertEquals(1, tableCount(branched, "sales", "orders"));
+    execute(branched, "INSERT INTO sales.orders VALUES ('1', 100)");
+    branched.commit();
+    branched.setAutoCommit(true);
+    Assertions.assertEquals(List.of("1:100"),
+        rows(branched, "SELECT id, amount FROM sales.orders"));
+    Assertions.assertEquals(List.of(), rows(raw, "SELECT id, amount FROM sales.orders"));
+    execute(branched, "BRANCH DROP br_catalog");
+    branched.close();
+  }
+
+  @Test
+  void catalogQueriesRunOnABranchOfDuckLake() throws SQLException {
+    assertCatalogQueriesRun(openLake());
+  }
+
+  @Test
+  void catalogQueriesRunOnABranchOfDuckDb() throws SQLException {
+    assertCatalogQueriesRun(DriverManager.getConnection("jdbc:duckdb:"));
   }
 }

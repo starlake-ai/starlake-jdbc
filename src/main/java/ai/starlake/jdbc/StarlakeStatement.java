@@ -35,6 +35,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLWarning;
 import java.sql.Statement;
+import java.util.List;
 import java.util.logging.Level;
 
 public class StarlakeStatement implements Statement {
@@ -116,25 +117,21 @@ public class StarlakeStatement implements Statement {
           String rewrittenSql = connection.currentSession.rewriteSql(st, sql);
 
           Boolean isSchema = st.accept(objectsVisitor, connection.getMetaData());
+          final ResultSet result;
           if (isSchema == null || !isSchema) {
-            return new StarlakeResultSet(this, wrappedExecutor.execute(rewrittenSql));
+            result = new StarlakeResultSet(this, wrappedExecutor.execute(rewrittenSql));
           } else {
             StarlakeSession.LOGGER.warning("Ignore schema DML statements.");
-            return new StarlakeVirtualResultSet("Records", "0");
+            result = new StarlakeVirtualResultSet("Records", "0");
           }
-
-
-
+          connection.currentSession.recordStatement(st, sql);
+          return result;
         } else {
           return new StarlakeResultSet(this, wrappedExecutor.execute(unpipedSql));
         }
       }
     } catch (JSQLParserException e) {
-      StarlakeConnection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
-      if (connection.currentSession != null) {
-        connection.currentSession.recordHistory(sql);
-      }
-      return fallbackExecutor.execute(sql);
+      return executeUnparsed(sql, e, fallbackExecutor::execute);
     }
   }
 
@@ -179,6 +176,7 @@ public class StarlakeStatement implements Statement {
             StarlakeSession.LOGGER.warning("Ignore schema DML statements.");
             result = (T) Integer.valueOf(-1);
           }
+          connection.currentSession.recordStatement(st, sql);
 
           // Update metadata when tables have been changed
           updateMetadataIfNeeded(st);
@@ -189,12 +187,91 @@ public class StarlakeStatement implements Statement {
         }
       }
     } catch (JSQLParserException e) {
-      StarlakeConnection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
-      if (connection.currentSession != null) {
-        connection.currentSession.recordHistory(sql);
-      }
-      return fallbackExecutor.execute(sql);
+      return executeUnparsed(sql, e, fallbackExecutor::execute);
     }
+  }
+
+  /** Statements that only read, run as is on a branch when they can not be parsed. */
+  private static final List<String> UNPARSED_READ_ONLY =
+      List.of("SHOW", "DESC", "DESCRIBE", "EXPLAIN", "LIST");
+
+  /**
+   * Statements that set the session context and touch no table data, run as is on a branch when
+   * they can not be parsed, and replayed by APPLY.
+   */
+  private static final List<String> UNPARSED_CONTEXT = List.of("USE", "SET", "UNSET", "BEGIN",
+      "COMMIT", "ROLLBACK", "START TRANSACTION", "ALTER SESSION");
+
+  /**
+   * Run a statement JSqlParser could not parse. Outside a branch it runs as is. On a branch it can
+   * not be rewritten to read and write the branch tables, so running it as is would hit the
+   * production tables: it is refused, unless it is a statement that touches no table data.
+   */
+  private <T> T executeUnparsed(String sql, JSQLParserException e, SqlExecutor<T> executor)
+      throws SQLException {
+    final StarlakeSession session = connection.currentSession;
+    if (session == null || session.getStatus() != StarlakeSession.Status.STARTED) {
+      StarlakeConnection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
+      return executor.execute(sql);
+    }
+
+    final String keywords = leadingKeywords(sql);
+    final boolean readOnly = startsWithAny(keywords, UNPARSED_READ_ONLY);
+    if (!readOnly && !startsWithAny(keywords, UNPARSED_CONTEXT)) {
+      throw new SQLException("Branch " + session.getSessionId()
+          + " is active and this statement can not be parsed, so it can not be redirected to the"
+          + " branch tables. It was not run, to keep it from changing production:\n" + sql, "0A000",
+          e);
+    }
+
+    StarlakeConnection.LOGGER.log(Level.WARNING,
+        "Statement can not be parsed, run as is on branch " + session.getSessionId() + ":\n" + sql);
+    final T result = executor.execute(sql);
+    if (!readOnly) {
+      session.recordStatement(null, sql);
+    }
+    return result;
+  }
+
+  private static boolean startsWithAny(String keywords, List<String> prefixes) {
+    for (String prefix : prefixes) {
+      if (keywords.equals(prefix) || keywords.startsWith(prefix + " ")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * The first two words of a statement, upper cased, after any leading comments and whitespace.
+   */
+  static String leadingKeywords(String sql) {
+    int i = 0;
+    final int n = sql.length();
+    while (i < n) {
+      if (Character.isWhitespace(sql.charAt(i))) {
+        i++;
+      } else if (sql.startsWith("--", i)) {
+        int end = sql.indexOf('\n', i);
+        i = end < 0 ? n : end + 1;
+      } else if (sql.startsWith("/*", i)) {
+        int end = sql.indexOf("*/", i + 2);
+        i = end < 0 ? n : end + 2;
+      } else {
+        break;
+      }
+    }
+    String[] words = sql.substring(i).trim().split("[\\s;(]+", 3);
+    StringBuilder sb = new StringBuilder();
+    for (int w = 0; w < Math.min(2, words.length); w++) {
+      if (!words[w].isEmpty()) {
+        if (sb.length() > 0) {
+          sb.append(' ');
+        }
+        sb.append(words[w].toUpperCase(java.util.Locale.ROOT));
+      }
+    }
+    return sb.toString();
   }
 
   // Extract metadata update logic to separate method
@@ -314,11 +391,13 @@ public class StarlakeStatement implements Statement {
           Boolean isSchema = st.accept(objectsVisitor, connection.getMetaData());
           if (isSchema == null || !isSchema) {
             boolean result = wrappedExecutor.execute(rewrittenSql);
+            connection.currentSession.recordStatement(st, sql);
             // Update metadata when tables have been changed
             updateMetadataIfNeeded(st);
             return result;
           } else {
             StarlakeSession.LOGGER.warning("Ignore schema DML statements.");
+            connection.currentSession.recordStatement(st, sql);
             return false;
           }
         } else {
@@ -326,11 +405,7 @@ public class StarlakeStatement implements Statement {
         }
       }
     } catch (JSQLParserException e) {
-      StarlakeConnection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
-      if (connection.currentSession != null) {
-        connection.currentSession.recordHistory(sql);
-      }
-      return fallbackExecutor.execute(sql);
+      return executeUnparsed(sql, e, fallbackExecutor::execute);
     }
   }
 

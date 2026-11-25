@@ -690,7 +690,7 @@ public class StarlakeConnection implements Connection {
     }
   }
 
-  public void applySession(Map<String, String> options) {
+  public void applySession(Map<String, String> options) throws SQLException {
     if (currentSession == null) {
       throw new RuntimeException("No current Session in progress.");
     } else if (currentSession.getStatus() != Status.STARTED) {
@@ -702,7 +702,7 @@ public class StarlakeConnection implements Connection {
     }
   }
 
-  public void applySession(String id, Map<String, String> options) {
+  public void applySession(String id, Map<String, String> options) throws SQLException {
     if (!sessions.containsKey(id)) {
       throw new RuntimeException("Session not found: " + id);
     } else {

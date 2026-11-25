@@ -27,6 +27,7 @@ import org.junit.jupiter.api.function.Executable;
 
 import java.sql.Driver;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -1054,6 +1055,194 @@ public class StarlakeSessionTest {
     // nothing after the failed statement reached production
     Assertions.assertEquals(0, countRows(conn.wrapped, "test.c"));
     Assertions.assertEquals(0, countRows(conn.wrapped, "test.b"));
+  }
+
+  @Test
+  void preparedStatementOnBranchIsRewrittenAndApplied() throws SQLException {
+    try (Statement st = conn.createStatement()) {
+      st.execute("SESSION START session1");
+      try (PreparedStatement ps = conn.prepareStatement("INSERT INTO test.b VALUES (?)")) {
+        ps.setString(1, "it's");
+        Assertions.assertEquals(1, ps.executeUpdate());
+      }
+      Assertions.assertEquals(0, countRows(conn.wrapped, "test.b"));
+      Assertions.assertEquals(List.of("INSERT INTO test.b VALUES ('it''s')"),
+          new ArrayList<>(conn.currentSession.getStatements().values()));
+
+      st.execute("SESSION APPLY session1");
+    }
+    try (Statement prod = conn.wrapped.createStatement();
+        ResultSet rs = prod.executeQuery("SELECT c FROM test.b")) {
+      if (!rs.next()) {
+        Assertions.fail("No records returned.");
+      }
+      Assertions.assertEquals("it's", rs.getString(1));
+    }
+  }
+
+  @Test
+  void preparedQueryOnBranchReadsBranchAndIsNotRecorded() throws SQLException {
+    try (Statement st = conn.createStatement()) {
+      st.execute("SESSION START session1");
+      st.executeUpdate("INSERT INTO test.b VALUES('branch')");
+      try (PreparedStatement ps = conn.prepareStatement("SELECT c FROM test.b WHERE c = ?")) {
+        ps.setString(1, "branch");
+        try (ResultSet rs = ps.executeQuery()) {
+          if (!rs.next()) {
+            Assertions.fail("No records returned.");
+          }
+        }
+      }
+      Assertions.assertEquals(1, conn.currentSession.getStatements().size());
+    }
+  }
+
+  @Test
+  void preparedBatchOnBranchIsApplied() throws SQLException {
+    try (Statement st = conn.createStatement()) {
+      st.execute("SESSION START session1");
+      try (PreparedStatement ps = conn.prepareStatement("INSERT INTO test.b VALUES (?)")) {
+        ps.setString(1, "a");
+        ps.addBatch();
+        ps.setNull(1, java.sql.Types.VARCHAR);
+        ps.addBatch();
+        ps.executeBatch();
+      }
+      Assertions.assertEquals(0, countRows(conn.wrapped, "test.b"));
+      Assertions.assertEquals(
+          List.of("INSERT INTO test.b VALUES ('a')", "INSERT INTO test.b VALUES (NULL)"),
+          new ArrayList<>(conn.currentSession.getStatements().values()));
+      st.execute("SESSION APPLY session1");
+    }
+    Assertions.assertEquals(2, countRows(conn.wrapped, "test.b"));
+  }
+
+  @Test
+  void statementBatchOnBranchIsApplied() throws SQLException {
+    try (Statement st = conn.createStatement()) {
+      st.execute("SESSION START session1");
+      st.addBatch("INSERT INTO test.b VALUES('a')");
+      st.addBatch("INSERT INTO test.b VALUES('b')");
+      st.executeBatch();
+      Assertions.assertEquals(0, countRows(conn.wrapped, "test.b"));
+      Assertions.assertEquals(2, conn.currentSession.getStatements().size());
+      st.execute("SESSION APPLY session1");
+    }
+    Assertions.assertEquals(2, countRows(conn.wrapped, "test.b"));
+  }
+
+  @Test
+  void unparsedStatementIsRefusedInBatchOnBranch() throws SQLException {
+    try (Statement st = conn.createStatement()) {
+      st.execute("SESSION START session1");
+      SQLException e = Assertions.assertThrows(SQLException.class,
+          () -> st.addBatch("MERGE INTO test.b KEY(c) VALUES('prod')"));
+      Assertions.assertEquals("0A000", e.getSQLState());
+    }
+  }
+
+  @Test
+  void unrecordableParameterIsRefusedOnBranch() throws SQLException {
+    try (Statement st = conn.createStatement()) {
+      st.execute("SESSION START session1");
+      try (PreparedStatement ps = conn.prepareStatement("INSERT INTO test.b VALUES (?)")) {
+        ps.setCharacterStream(1, new java.io.StringReader("x"));
+        SQLException e = Assertions.assertThrows(SQLException.class, ps::executeUpdate);
+        Assertions.assertEquals("0A000", e.getSQLState());
+      }
+      Assertions.assertTrue(conn.currentSession.getStatements().isEmpty());
+    }
+    Assertions.assertEquals(0, countRows(conn.wrapped, "test.b"));
+  }
+
+  @Test
+  void statementPreparedBeforeBranchIsRefused() throws SQLException {
+    try (Statement st = conn.createStatement();
+        PreparedStatement ps = conn.prepareStatement("INSERT INTO test.b VALUES (?)")) {
+      st.execute("SESSION START session1");
+      ps.setString(1, "prod");
+      SQLException e = Assertions.assertThrows(SQLException.class, ps::executeUpdate);
+      Assertions.assertEquals("0A000", e.getSQLState());
+    }
+    Assertions.assertEquals(0, countRows(conn.wrapped, "test.b"));
+  }
+
+  @Test
+  void callableStatementIsRefusedOnBranch() throws SQLException {
+    try (Statement st = conn.createStatement()) {
+      st.execute("SESSION START session1");
+      SQLException e =
+          Assertions.assertThrows(SQLException.class, () -> conn.prepareCall("CALL 1"));
+      Assertions.assertEquals("0A000", e.getSQLState());
+    }
+  }
+
+  @Test
+  void bindLiteralsSkipsQuotedQuestionMarks() throws SQLException {
+    Map<Integer, Object> parameters = new java.util.HashMap<>();
+    parameters.put(1, 42);
+    parameters.put(2, java.sql.Date.valueOf("2026-01-31"));
+    parameters.put(3, "a\\b'c");
+    Assertions.assertEquals(
+        "SELECT '?', \"?\", $$?$$ /* ? */ FROM t WHERE a = 42 AND b = DATE '2026-01-31'"
+            + " AND c = 'a\\\\b''c' -- ?",
+        StarlakePreparedStatement.bindLiterals(
+            "SELECT '?', \"?\", $$?$$ /* ? */ FROM t WHERE a = ? AND b = ? AND c = ? -- ?",
+            parameters, StarlakeConnection.DatabaseType.SNOWFLAKE));
+    Assertions.assertEquals("'it\\'s'",
+        StarlakePreparedStatement.quote("it's", StarlakeConnection.DatabaseType.BIGQUERY));
+    Assertions.assertEquals("'it''s'",
+        StarlakePreparedStatement.quote("it's", StarlakeConnection.DatabaseType.DUCKDB));
+  }
+
+  @Test
+  void applyResumesAfterError() throws SQLException {
+    try (Statement st = conn.createStatement()) {
+      st.execute("SESSION START session1");
+      st.executeUpdate("INSERT INTO test.b VALUES('1')");
+      st.executeUpdate("CREATE TABLE test.c (x INT)");
+      st.executeUpdate("INSERT INTO test.c VALUES (1)");
+
+      try (Statement prod = conn.wrapped.createStatement()) {
+        prod.executeUpdate("CREATE TABLE test.c (x INT)");
+      }
+      Assertions.assertThrows(SQLException.class, () -> st.execute("SESSION APPLY session1"));
+      Assertions.assertEquals(1, conn.currentSession.getAppliedCount());
+      Assertions.assertEquals(1, countRows(conn.wrapped, "test.b"));
+
+      // remove the cause and apply again: the INSERT into test.b is not replayed
+      try (Statement prod = conn.wrapped.createStatement()) {
+        prod.executeUpdate("DROP TABLE test.c");
+      }
+      st.execute("SESSION APPLY session1");
+      Assertions.assertEquals(Status.APPLIED, conn.currentSession.getStatus());
+    }
+    Assertions.assertEquals(1, countRows(conn.wrapped, "test.b"));
+    Assertions.assertEquals(1, countRows(conn.wrapped, "test.c"));
+  }
+
+  @Test
+  void applyProgressIsPersisted() throws SQLException {
+    try (Statement st = conn.createStatement()) {
+      st.execute("SESSION START session1 WITH persist=true");
+      st.executeUpdate("INSERT INTO test.b VALUES('1')");
+      st.executeUpdate("CREATE TABLE test.c (x INT)");
+      st.executeUpdate("INSERT INTO test.c VALUES (1)");
+
+      try (Statement prod = conn.wrapped.createStatement()) {
+        prod.executeUpdate("CREATE TABLE test.c (x INT)");
+      }
+      Assertions.assertThrows(SQLException.class,
+          () -> st.execute("SESSION APPLY session1 WITH persist=true"));
+    }
+    // the session read back from the database resumes after the first statement
+    StarlakeSession reloaded =
+        StarlakeSession.getPersistingSession(conn, "session1", Map.of("persist", "true"));
+    Assertions.assertNotNull(reloaded);
+    Assertions.assertEquals(3, reloaded.getStatements().size());
+    Assertions.assertEquals(1, reloaded.getAppliedCount());
+    Assertions
+        .assertFalse(reloaded.getReplacementTables().containsKey(StarlakeSession.APPLIED_MARKER));
   }
 
 }

@@ -200,8 +200,7 @@ public class StarlakePreparedStatement extends StarlakeStatement implements Prep
     return type == StarlakeConnection.DatabaseType.SNOWFLAKE
         || type == StarlakeConnection.DatabaseType.BIGQUERY
         || type == StarlakeConnection.DatabaseType.DATABRICKS
-        || type == StarlakeConnection.DatabaseType.MYSQL
-        || type == StarlakeConnection.DatabaseType.MARIADB;
+        || type == StarlakeConnection.DatabaseType.MYSQL;
   }
 
   static String quote(String value, StarlakeConnection.DatabaseType type) {

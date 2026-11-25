@@ -49,8 +49,6 @@ public class StarlakeDriver implements Driver {
 
     if (jdbcUrl.startsWith("jdbc:mysql:")) {
       return "com.mysql.cj.jdbc.Driver";
-    } else if (jdbcUrl.startsWith("jdbc:mariadb:")) {
-      return "org.mariadb.jdbc.Driver";
     } else if (jdbcUrl.startsWith("jdbc:postgresql:")) {
       return "org.postgresql.Driver";
     } else if (jdbcUrl.startsWith("jdbc:oracle:thin:")) {

@@ -30,6 +30,10 @@ import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.schema.MultiPartName;
 import net.sf.jsqlparser.schema.Table;
+import net.sf.jsqlparser.statement.DescribeStatement;
+import net.sf.jsqlparser.statement.ExplainStatement;
+import net.sf.jsqlparser.statement.ShowColumnsStatement;
+import net.sf.jsqlparser.statement.ShowStatement;
 import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.StatementVisitorAdapter;
 import net.sf.jsqlparser.statement.alter.Alter;
@@ -41,8 +45,13 @@ import net.sf.jsqlparser.statement.drop.Drop;
 import net.sf.jsqlparser.statement.insert.Insert;
 import net.sf.jsqlparser.statement.merge.Merge;
 import net.sf.jsqlparser.statement.select.FromItemVisitorAdapter;
+import net.sf.jsqlparser.statement.select.ParenthesedSelect;
 import net.sf.jsqlparser.statement.select.PlainSelect;
+import net.sf.jsqlparser.statement.select.Select;
 import net.sf.jsqlparser.statement.select.SelectVisitorAdapter;
+import net.sf.jsqlparser.statement.select.SetOperationList;
+import net.sf.jsqlparser.statement.select.WithItem;
+import net.sf.jsqlparser.statement.show.ShowTablesStatement;
 import net.sf.jsqlparser.statement.truncate.Truncate;
 import net.sf.jsqlparser.statement.update.Update;
 import net.sf.jsqlparser.util.TablesNamesFinder;
@@ -603,19 +612,33 @@ public class StarlakeSession {
     }
   }
 
-  public void apply(Map<String, String> options) {
-    this.status = Status.APPLIED;
-    this.endInstant = Instant.now();
-
+  /**
+   * Replay the branch statements on production, in the order they ran. The replay stops at the
+   * first statement that fails: the session stays STARTED, APPLY drops none of its tables, and the
+   * error says how many statements were already applied, since there is no rollback.
+   */
+  public void apply(Map<String, String> options) throws SQLException {
     try (java.sql.Statement statement = conn.wrapped.createStatement()) {
+      int applied = 0;
+      final int total = statements.size();
       for (String sqlStr : statements.values()) {
         try {
           statement.execute(sqlStr);
         } catch (SQLException ex) {
           LOGGER.log(Level.SEVERE, "Failed apply statement from session:\n" + sqlStr, ex);
+          throw new SQLException("BRANCH APPLY " + sessionId + " stopped at statement "
+              + (applied + 1) + " of " + total + ": " + applied
+              + " statement(s) were applied to production and are not rolled back. The branch is"
+              + " still started. Failed statement:\n" + sqlStr, ex.getSQLState(), ex);
         }
+        applied++;
       }
+    }
 
+    this.status = Status.APPLIED;
+    this.endInstant = Instant.now();
+
+    try (java.sql.Statement statement = conn.wrapped.createStatement()) {
       if (isFalse(options, "keep")) {
         for (Table t : replacementTables.values()) {
           statement.executeUpdate("DROP TABLE " + t.getFullyQualifiedName());
@@ -698,14 +721,14 @@ public class StarlakeSession {
     return found;
   }
 
+  /**
+   * Rewrite a statement so it reads and writes the branch tables. The statement is not recorded:
+   * the caller records it with {@link #recordStatement(Statement, String)} once it has run, so a
+   * statement that fails on the branch is never replayed by APPLY.
+   */
   public String rewriteSql(Statement st, String sqlStr) throws SQLException {
     LOGGER.info("Rewrite:\n" + sqlStr);
     if (status == Status.STARTED) {
-      Instant instant = nextInstant();
-      statements.put(instant, sqlStr);
-
-      recordHistory(sqlStr, instant);
-
       // maintain the replacement tables
       st.accept(statementVisitor, st);
 
@@ -795,9 +818,54 @@ public class StarlakeSession {
     return now;
   }
 
-  /** Append a statement to the persisted session history, when the session is persisted. */
-  void recordHistory(String sql) throws SQLException {
-    recordHistory(sql, nextInstant());
+  /**
+   * Add a statement that ran on the branch to the statements APPLY replays on production. Read-only
+   * statements are left out: replaying them would only cost a production query. Nothing is recorded
+   * once the session is applied or dropped.
+   *
+   * @param st the parsed statement, or null when the statement could not be parsed
+   * @param sqlStr the statement as sent by the client, before any rewriting
+   */
+  void recordStatement(Statement st, String sqlStr) throws SQLException {
+    if (status != Status.STARTED || isReadOnly(st)) {
+      return;
+    }
+    Instant instant = nextInstant();
+    statements.put(instant, sqlStr);
+    recordHistory(sqlStr, instant);
+  }
+
+  /**
+   * Whether a statement only reads: a query without INTO, SHOW, DESCRIBE or EXPLAIN. A statement
+   * that could not be parsed (null) is never treated as read-only.
+   */
+  static boolean isReadOnly(Statement st) {
+    if (st instanceof Select && ((Select) st).getWithItemsList() != null) {
+      // a CTE can hold an INSERT, UPDATE or DELETE, as in WITH d AS (DELETE ... RETURNING *)
+      for (WithItem<?> withItem : ((Select) st).getWithItemsList()) {
+        if (!(withItem.getParenthesedStatement() instanceof ParenthesedSelect)
+            || !isReadOnly((ParenthesedSelect) withItem.getParenthesedStatement())) {
+          return false;
+        }
+      }
+    }
+    if (st instanceof PlainSelect) {
+      PlainSelect plainSelect = (PlainSelect) st;
+      return plainSelect.getIntoTables() == null && plainSelect.getIntoTempTable() == null;
+    } else if (st instanceof SetOperationList) {
+      for (Select select : ((SetOperationList) st).getSelects()) {
+        if (!isReadOnly(select)) {
+          return false;
+        }
+      }
+      return true;
+    } else if (st instanceof ParenthesedSelect) {
+      return isReadOnly(((ParenthesedSelect) st).getSelect());
+    } else {
+      return st instanceof ShowStatement || st instanceof ShowTablesStatement
+          || st instanceof ShowColumnsStatement || st instanceof DescribeStatement
+          || st instanceof ExplainStatement;
+    }
   }
 
   /**

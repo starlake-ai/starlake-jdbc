@@ -17,6 +17,7 @@
 package ai.starlake.jdbc;
 
 import ai.starlake.jdbc.StarlakeSession.Status;
+import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.schema.MultiPartName;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -921,43 +922,138 @@ public class StarlakeSessionTest {
     }
   }
 
-    @Test
-    void explicitSchemaWithinSessionTest() throws ClassNotFoundException, SQLException {
-        final String sessionId = "session1";
-        try (Statement st = conn.createStatement()) {
-            // is a Starlake Session aware connection
-            Assertions.assertInstanceOf(StarlakeConnection.class, conn);
+  @Test
+  void explicitSchemaWithinSessionTest() throws ClassNotFoundException, SQLException {
+    final String sessionId = "session1";
+    try (Statement st = conn.createStatement()) {
+      // is a Starlake Session aware connection
+      Assertions.assertInstanceOf(StarlakeConnection.class, conn);
 
-            // Start a session
-            st.execute("SESSION START " + sessionId + " WITH persist=true");
-            Assertions.assertEquals(Status.STARTED, conn.currentSession.getStatus());
+      // Start a session
+      st.execute("SESSION START " + sessionId + " WITH persist=true");
+      Assertions.assertEquals(Status.STARTED, conn.currentSession.getStatus());
 
-            st.executeUpdate("CREATE SCHEMA test4;");
-            assertThatH2SchemaNotExists("test4");
+      st.executeUpdate("CREATE SCHEMA test4;");
+      assertThatH2SchemaNotExists("test4");
 
-            st.executeUpdate("SET SCHEMA test4;");
-            assertThatH2SchemaNotExists("test4");
+      st.executeUpdate("SET SCHEMA test4;");
+      assertThatH2SchemaNotExists("test4");
 
-            st.executeUpdate("CREATE TABLE IF NOT EXISTS f (c VARCHAR(40));");
-            st.executeUpdate("INSERT INTO f VALUES('test1'); ");
-            try (ResultSet rs = st.executeQuery("SELECT * FROM test4.f")) {
-                if (rs.next()) {
-                    Assertions.assertEquals("test1", rs.getString(1));
-                } else {
-                    Assertions.fail("No records returned.");
-                }
-            }
-            st.execute("SESSION APPLY " + sessionId + " WITH persist=true");
-            assertThatH2SchemaExists("test4");
-
-            try (ResultSet rs = st.executeQuery("SELECT * FROM test4.f")) {
-                if (rs.next()) {
-                    Assertions.assertEquals("test1", rs.getString(1));
-                } else {
-                    Assertions.fail("No records returned.");
-                }
-            }
+      st.executeUpdate("CREATE TABLE IF NOT EXISTS f (c VARCHAR(40));");
+      st.executeUpdate("INSERT INTO f VALUES('test1'); ");
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test4.f")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test1", rs.getString(1));
+        } else {
+          Assertions.fail("No records returned.");
         }
+      }
+      st.execute("SESSION APPLY " + sessionId + " WITH persist=true");
+      assertThatH2SchemaExists("test4");
+
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test4.f")) {
+        if (rs.next()) {
+          Assertions.assertEquals("test1", rs.getString(1));
+        } else {
+          Assertions.fail("No records returned.");
+        }
+      }
     }
+  }
+
+  private int countRows(java.sql.Connection c, String table) throws SQLException {
+    try (Statement st = c.createStatement();
+        ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM " + table)) {
+      if (!rs.next()) {
+        throw new SQLException("No row counted in " + table);
+      }
+      return rs.getInt(1);
+    }
+  }
+
+  @Test
+  void unparsedStatementIsRefusedOnBranch() throws SQLException {
+    try (Statement st = conn.createStatement()) {
+      st.execute("SESSION START session1");
+      // H2 MERGE ... KEY syntax, which JSqlParser can not parse: run as is, it would write
+      // to the production table test.b
+      SQLException e = Assertions.assertThrows(SQLException.class,
+          () -> st.executeUpdate("MERGE INTO test.b KEY(c) VALUES('prod')"));
+      Assertions.assertEquals("0A000", e.getSQLState());
+      Assertions.assertTrue(conn.currentSession.getStatements().isEmpty());
+    }
+    Assertions.assertEquals(0, countRows(conn.wrapped, "test.b"));
+  }
+
+  @Test
+  void unparsedStatementRunsOutsideBranch() throws SQLException {
+    try (Statement st = conn.createStatement()) {
+      st.executeUpdate("MERGE INTO test.b KEY(c) VALUES('prod')");
+    }
+    Assertions.assertEquals(1, countRows(conn.wrapped, "test.b"));
+  }
+
+  @Test
+  void leadingKeywordsSkipsComments() {
+    Assertions.assertEquals("ALTER SESSION",
+        StarlakeStatement.leadingKeywords("  -- set the tz\n/* x */ alter  session set TZ='UTC'"));
+    Assertions.assertEquals("SHOW", StarlakeStatement.leadingKeywords("show;"));
+    Assertions.assertEquals("", StarlakeStatement.leadingKeywords("-- only a comment"));
+  }
+
+  @Test
+  void readOnlyStatements() throws Exception {
+    Assertions.assertTrue(StarlakeSession.isReadOnly(CCJSqlParserUtil.parse("SELECT * FROM a")));
+    Assertions.assertTrue(StarlakeSession
+        .isReadOnly(CCJSqlParserUtil.parse("WITH x AS (SELECT 1) SELECT * FROM x UNION SELECT 2")));
+    Assertions
+        .assertFalse(StarlakeSession.isReadOnly(CCJSqlParserUtil.parse("SELECT * INTO b FROM a")));
+    Assertions.assertFalse(
+        StarlakeSession.isReadOnly(CCJSqlParserUtil.parse("INSERT INTO a VALUES (1)")));
+    Assertions.assertFalse(StarlakeSession.isReadOnly(null));
+  }
+
+  @Test
+  void failedAndReadOnlyStatementsAreNotApplied() throws SQLException {
+    try (Statement st = conn.createStatement()) {
+      st.execute("SESSION START session1");
+      st.executeUpdate("INSERT INTO test.b VALUES('1')");
+      // fails on the branch: one column only
+      Assertions.assertThrows(SQLException.class,
+          () -> st.executeUpdate("INSERT INTO test.b VALUES('1', '2')"));
+      try (ResultSet rs = st.executeQuery("SELECT * FROM test.b")) {
+        if (!rs.next()) {
+          Assertions.fail("No records returned.");
+        }
+      }
+      Assertions.assertEquals(1, conn.currentSession.getStatements().size());
+
+      st.execute("SESSION APPLY session1");
+    }
+    Assertions.assertEquals(1, countRows(conn.wrapped, "test.b"));
+  }
+
+  @Test
+  void applyStopsAtFirstError() throws SQLException {
+    try (Statement st = conn.createStatement()) {
+      st.execute("SESSION START session1");
+      st.executeUpdate("CREATE TABLE test.c (x INT)");
+      st.executeUpdate("INSERT INTO test.c VALUES (1)");
+      st.executeUpdate("INSERT INTO test.b VALUES('1')");
+
+      // production gets a test.c of its own: replaying the CREATE TABLE fails
+      try (Statement prod = conn.wrapped.createStatement()) {
+        prod.executeUpdate("CREATE TABLE test.c (x INT)");
+      }
+
+      SQLException e =
+          Assertions.assertThrows(SQLException.class, () -> st.execute("SESSION APPLY session1"));
+      Assertions.assertTrue(e.getMessage().contains("stopped at statement 1 of 3"), e.getMessage());
+      Assertions.assertEquals(Status.STARTED, conn.currentSession.getStatus());
+    }
+    // nothing after the failed statement reached production
+    Assertions.assertEquals(0, countRows(conn.wrapped, "test.c"));
+    Assertions.assertEquals(0, countRows(conn.wrapped, "test.b"));
+  }
 
 }

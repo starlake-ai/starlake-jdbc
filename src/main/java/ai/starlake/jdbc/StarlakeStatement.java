@@ -30,11 +30,13 @@ import net.sf.jsqlparser.statement.create.table.CreateTable;
 import net.sf.jsqlparser.statement.create.view.CreateView;
 import net.sf.jsqlparser.statement.drop.Drop;
 
+import java.sql.BatchUpdateException;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLWarning;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Level;
 
@@ -209,12 +211,29 @@ public class StarlakeStatement implements Statement {
    */
   private <T> T executeUnparsed(String sql, JSQLParserException e, SqlExecutor<T> executor)
       throws SQLException {
-    final StarlakeSession session = connection.currentSession;
-    if (session == null || session.getStatus() != StarlakeSession.Status.STARTED) {
+    final StarlakeSession session = connection.activeSession();
+    if (session == null) {
       StarlakeConnection.LOGGER.log(Level.WARNING, "Statement can not be parsed:\n" + sql);
       return executor.execute(sql);
     }
 
+    final boolean readOnly = checkUnparsed(session, sql, e);
+    final T result = executor.execute(sql);
+    if (!readOnly) {
+      session.recordStatement(null, sql);
+    }
+    return result;
+  }
+
+  /**
+   * Check that a statement JSqlParser could not parse may run as is on a branch: only statements
+   * that touch no table data may.
+   *
+   * @return whether the statement only reads, and so is not replayed by APPLY
+   * @throws SQLException with SQLState 0A000 when the statement may not run on the branch
+   */
+  static boolean checkUnparsed(StarlakeSession session, String sql, JSQLParserException e)
+      throws SQLException {
     final String keywords = leadingKeywords(sql);
     final boolean readOnly = startsWithAny(keywords, UNPARSED_READ_ONLY);
     if (!readOnly && !startsWithAny(keywords, UNPARSED_CONTEXT)) {
@@ -223,14 +242,60 @@ public class StarlakeStatement implements Statement {
           + " branch tables. It was not run, to keep it from changing production:\n" + sql, "0A000",
           e);
     }
-
     StarlakeConnection.LOGGER.log(Level.WARNING,
         "Statement can not be parsed, run as is on branch " + session.getSessionId() + ":\n" + sql);
-    final T result = executor.execute(sql);
-    if (!readOnly) {
-      session.recordStatement(null, sql);
+    return readOnly;
+  }
+
+  /**
+   * A statement prepared or batched on a branch.
+   */
+  static final class BranchSql {
+    /** The parsed statement, null when it could not be parsed. */
+    final net.sf.jsqlparser.statement.Statement parsed;
+    /** The statement as sent by the client. */
+    final String sql;
+    /** The statement rewritten to read and write the branch tables. */
+    final String rewrittenSql;
+    /** Whether APPLY replays the statement: false for read-only statements. */
+    final boolean replayed;
+
+    BranchSql(net.sf.jsqlparser.statement.Statement parsed, String sql, String rewrittenSql,
+        boolean replayed) {
+      this.parsed = parsed;
+      this.sql = sql;
+      this.rewrittenSql = rewrittenSql;
+      this.replayed = replayed;
     }
-    return result;
+  }
+
+  /**
+   * Rewrite a statement prepared or batched on an active branch. BRANCH commands and schema
+   * statements (CREATE or DROP SCHEMA, USE, SET SCHEMA) are refused: the branch plays some of them
+   * without running them, which only {@link #execute(String)} and its variants do.
+   */
+  static BranchSql toBranchSql(StarlakeConnection connection, StarlakeSession session, String sql)
+      throws SQLException {
+    final net.sf.jsqlparser.statement.Statement st;
+    try {
+      String unpipedSql = JSQLTranspiler.unpipe(sql, connection.executor, p -> {
+      });
+      st = CCJSqlParserUtil.parse(unpipedSql, connection.executor, p -> {
+      });
+    } catch (JSQLParserException e) {
+      return new BranchSql(null, sql, sql, !checkUnparsed(session, sql, e));
+    }
+
+    if (st instanceof SessionStatement || st instanceof CreateSchema || st instanceof UseStatement
+        || st instanceof SetStatement
+            && "SCHEMA".equalsIgnoreCase(String.valueOf(((SetStatement) st).getName()))
+        || st instanceof Drop && "SCHEMA".equalsIgnoreCase(((Drop) st).getType())) {
+      throw new SQLException("On branch " + session.getSessionId()
+          + ", BRANCH commands and schema statements can not be prepared or batched: run them with"
+          + " Statement.execute:\n" + sql, "0A000");
+    }
+
+    return new BranchSql(st, sql, session.rewriteSql(st, sql), !StarlakeSession.isReadOnly(st));
   }
 
   private static boolean startsWithAny(String keywords, List<String> prefixes) {
@@ -275,7 +340,7 @@ public class StarlakeStatement implements Statement {
   }
 
   // Extract metadata update logic to separate method
-  private void updateMetadataIfNeeded(net.sf.jsqlparser.statement.Statement st) {
+  void updateMetadataIfNeeded(net.sf.jsqlparser.statement.Statement st) {
     try {
       if (st instanceof CreateTable) {
         Table t = new Table(((CreateTable) st).getTable().getFullyQualifiedName());
@@ -461,17 +526,84 @@ public class StarlakeStatement implements Statement {
 
   @Override
   public void addBatch(String sql) throws SQLException {
-    wrapped.addBatch(sql);
+    final StarlakeSession session = connection.activeSession();
+    if (session == null) {
+      wrapped.addBatch(sql);
+      addPending(null, null, null);
+    } else {
+      final BranchSql branchSql = toBranchSql(connection, session, sql);
+      wrapped.addBatch(branchSql.rewrittenSql);
+      addPending(session, branchSql.parsed, branchSql.replayed ? sql : null);
+    }
+  }
+
+  /**
+   * A command of the current batch, kept to record it for APPLY once the batch has run.
+   */
+  private static final class Pending {
+    final StarlakeSession session;
+    final net.sf.jsqlparser.statement.Statement parsed;
+    /** The statement APPLY replays, null when it is not replayed. */
+    final String replayedSql;
+
+    Pending(StarlakeSession session, net.sf.jsqlparser.statement.Statement parsed,
+        String replayedSql) {
+      this.session = session;
+      this.parsed = parsed;
+      this.replayedSql = replayedSql;
+    }
+  }
+
+  /** The commands of the current batch, in the order of the wrapped batch. */
+  private final List<Pending> batch = new ArrayList<>();
+
+  /** Add a command to the current batch, after it was added to the wrapped batch. */
+  void addPending(StarlakeSession session, net.sf.jsqlparser.statement.Statement parsed,
+      String replayedSql) {
+    batch.add(new Pending(session, parsed, replayedSql));
+  }
+
+  /**
+   * Record the batch commands that ran on a branch. A command counts as run when the driver did not
+   * report it as failed.
+   */
+  private void recordBatch(int count, java.util.function.IntPredicate failed) throws SQLException {
+    try {
+      for (int i = 0; i < Math.min(count, batch.size()); i++) {
+        Pending pending = batch.get(i);
+        if (pending.session == null || failed.test(i)) {
+          continue;
+        }
+        if (pending.replayedSql != null) {
+          pending.session.recordStatement(pending.parsed, pending.replayedSql);
+        }
+        if (pending.parsed != null && pending.session == connection.currentSession) {
+          updateMetadataIfNeeded(pending.parsed);
+        }
+      }
+    } finally {
+      batch.clear();
+    }
   }
 
   @Override
   public void clearBatch() throws SQLException {
     wrapped.clearBatch();
+    batch.clear();
   }
 
   @Override
   public int[] executeBatch() throws SQLException {
-    return wrapped.executeBatch();
+    final int[] counts;
+    try {
+      counts = wrapped.executeBatch();
+    } catch (BatchUpdateException e) {
+      final int[] done = e.getUpdateCounts();
+      recordBatch(done == null ? 0 : done.length, i -> done[i] == EXECUTE_FAILED);
+      throw e;
+    }
+    recordBatch(counts.length, i -> counts[i] == EXECUTE_FAILED);
+    return counts;
   }
 
   @Override
@@ -572,7 +704,16 @@ public class StarlakeStatement implements Statement {
 
   @Override
   public long[] executeLargeBatch() throws SQLException {
-    return wrapped.executeLargeBatch();
+    final long[] counts;
+    try {
+      counts = wrapped.executeLargeBatch();
+    } catch (BatchUpdateException e) {
+      final long[] done = e.getLargeUpdateCounts();
+      recordBatch(done == null ? 0 : done.length, i -> done[i] == EXECUTE_FAILED);
+      throw e;
+    }
+    recordBatch(counts.length, i -> counts[i] == EXECUTE_FAILED);
+    return counts;
   }
 
   @Override

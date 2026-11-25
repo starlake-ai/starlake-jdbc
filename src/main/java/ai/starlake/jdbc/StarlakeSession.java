@@ -108,6 +108,15 @@ public class StarlakeSession {
   private final TreeMap<Instant, String> statements = new TreeMap<>();
   private Instant lastInstant = null;
 
+  /**
+   * How many of the statements, in the order they ran, APPLY has run on production. A BRANCH APPLY
+   * that stopped on an error resumes after them. Persisted in the mapping table under
+   * {@link #APPLIED_MARKER}, a name no table has.
+   */
+  private int appliedCount = 0;
+
+  static final String APPLIED_MARKER = "<applied>";
+
   private final ExpressionVisitor<Boolean> modifyingTableExpressionVisitor =
       new ExpressionVisitorAdapter<>();
 
@@ -362,6 +371,7 @@ public class StarlakeSession {
     boolean foundHistoryTable = false;
 
     final TreeMap<Instant, String> statements = new TreeMap<>();
+    int persistedAppliedCount = 0;
     final CaseInsensitiveLinkedHashMap<Table> replacementTables =
         new CaseInsensitiveLinkedHashMap<>();
 
@@ -371,7 +381,11 @@ public class StarlakeSession {
           while (rs.next()) {
             String fromTable = rs.getString(1);
             String toTable = rs.getString(2);
-            replacementTables.put(fromTable, new Table(toTable));
+            if (APPLIED_MARKER.equals(fromTable)) {
+              persistedAppliedCount = Integer.parseInt(toTable.trim());
+            } else {
+              replacementTables.put(fromTable, new Table(toTable));
+            }
           }
           foundMappingTable = true;
 
@@ -398,6 +412,7 @@ public class StarlakeSession {
         StarlakeSession session = new StarlakeSession(conn, id, options);
         session.replacementTables.putAll(replacementTables);
         session.statements.putAll(statements);
+        session.appliedCount = Math.min(persistedAppliedCount, statements.size());
         if (!statements.isEmpty()) {
           session.lastInstant = statements.lastKey();
         }
@@ -481,8 +496,8 @@ public class StarlakeSession {
           this.options.put("persist", "false");
         }
 
-        historyStatement = conn.wrapped.prepareStatement(
-            "INSERT INTO " + getHistoryTable() + " VALUES ( CURRENT_TIMESTAMP, ? )");
+        historyStatement =
+            conn.wrapped.prepareStatement("INSERT INTO " + getHistoryTable() + " VALUES ( ?, ? )");
 
         tableMappingDeleteStatement = conn.wrapped
             .prepareStatement("DELETE FROM " + getMappingTable() + " WHERE from_table = ?");
@@ -613,25 +628,32 @@ public class StarlakeSession {
   }
 
   /**
-   * Replay the branch statements on production, in the order they ran. The replay stops at the
-   * first statement that fails: the session stays STARTED, APPLY drops none of its tables, and the
-   * error says how many statements were already applied, since there is no rollback.
+   * Replay the branch statements on production, in the order they ran, starting after the ones a
+   * previous APPLY already ran. The replay stops at the first statement that fails: the session
+   * stays STARTED, APPLY drops none of its tables, and the error says how many statements are
+   * applied, since there is no rollback. Running APPLY again resumes at the failed statement.
    */
   public void apply(Map<String, String> options) throws SQLException {
     try (java.sql.Statement statement = conn.wrapped.createStatement()) {
-      int applied = 0;
       final int total = statements.size();
+      int index = 0;
       for (String sqlStr : statements.values()) {
+        index++;
+        if (index <= appliedCount) {
+          continue;
+        }
         try {
           statement.execute(sqlStr);
         } catch (SQLException ex) {
           LOGGER.log(Level.SEVERE, "Failed apply statement from session:\n" + sqlStr, ex);
-          throw new SQLException("BRANCH APPLY " + sessionId + " stopped at statement "
-              + (applied + 1) + " of " + total + ": " + applied
-              + " statement(s) were applied to production and are not rolled back. The branch is"
-              + " still started. Failed statement:\n" + sqlStr, ex.getSQLState(), ex);
+          throw new SQLException("BRANCH APPLY " + sessionId + " stopped at statement " + index
+              + " of " + total + ": the " + (index - 1)
+              + " statement(s) before it are applied to production and are not rolled back. The"
+              + " branch is still started: run BRANCH APPLY again to resume at this statement."
+              + " Failed statement:\n" + sqlStr, ex.getSQLState(), ex);
         }
-        applied++;
+        appliedCount = index;
+        recordAppliedCount();
       }
     }
 
@@ -869,16 +891,18 @@ public class StarlakeSession {
   }
 
   /**
-   * On DuckDB the row is stamped with the statement's instant: CURRENT_TIMESTAMP is the start of
-   * the transaction there, so every statement of a transaction would get the same stamp and all but
-   * one would be lost when the session is read back.
+   * The row is stamped with the statement's instant, which is after the previous one. With
+   * CURRENT_TIMESTAMP, statements in the same transaction (DuckDB) or the same clock tick would get
+   * the same stamp: all but one would be lost when the session is read back, which also shifts the
+   * count of applied statements APPLY resumes after.
    */
   private void recordHistory(String sql, Instant instant) throws SQLException {
     if (!isPersistent() || historyStatement == null) {
       return;
     }
     if (bindsParameters()) {
-      historyStatement.setString(1, sql);
+      historyStatement.setTimestamp(1, java.sql.Timestamp.from(instant));
+      historyStatement.setString(2, sql);
       historyStatement.executeUpdate();
     } else {
       String timestamp = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSS")
@@ -888,6 +912,27 @@ public class StarlakeSession {
             + timestamp + "', " + literal(sql) + " )");
       }
     }
+  }
+
+  /**
+   * Persist how many statements APPLY has run. When it can not be persisted, the statement just
+   * applied runs again on the next APPLY of a session read back from the database.
+   */
+  private void recordAppliedCount() {
+    if (!isPersistent() || tableMappingInsertStatement == null) {
+      return;
+    }
+    try {
+      recordTableMapping(APPLIED_MARKER, String.valueOf(appliedCount));
+    } catch (SQLException e) {
+      LOGGER.log(Level.SEVERE, "Failed to persist the progress of BRANCH APPLY " + sessionId
+          + " after statement " + appliedCount, e);
+    }
+  }
+
+  /** How many statements APPLY has run on production. */
+  public int getAppliedCount() {
+    return appliedCount;
   }
 
   private void recordTableMapping(String fromTable, String toTable) throws SQLException {

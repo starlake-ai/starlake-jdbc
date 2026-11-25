@@ -54,7 +54,7 @@ public class StarlakeConnection implements Connection {
   protected final ExecutorService executor = Executors.newCachedThreadPool();
 
   protected enum DatabaseType {
-    MYSQL, MARIADB, POSTGRES, ORACLE, SQLSERVER, SQLITE, H2, DERBY, DB2, FIREBIRD, HSQL, INFORMIX, TERADATA, SAPDB, BIGQUERY, SNOWFLAKE, REDSHIFT, DATABRICKS, DUCKDB, UNKNOWN
+    MYSQL, POSTGRES, ORACLE, SQLSERVER, SQLITE, H2, DERBY, DB2, FIREBIRD, HSQL, INFORMIX, TERADATA, SAPDB, BIGQUERY, SNOWFLAKE, REDSHIFT, DATABRICKS, DUCKDB, UNKNOWN
   }
 
   protected final DatabaseType type;
@@ -74,9 +74,6 @@ public class StarlakeConnection implements Connection {
       // Match by product name
       if (productName.contains("mysql")) {
         return DatabaseType.MYSQL;
-      }
-      if (productName.contains("mariadb")) {
-        return DatabaseType.MARIADB;
       }
       if (productName.contains("postgresql")) {
         return DatabaseType.POSTGRES;
@@ -142,7 +139,6 @@ public class StarlakeConnection implements Connection {
   public final String getClobType() {
     switch (type) {
       case MYSQL:
-      case MARIADB:
         return "LONGTEXT";
       case POSTGRES:
       case SQLITE:
